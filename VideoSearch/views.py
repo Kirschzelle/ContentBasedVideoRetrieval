@@ -6,9 +6,3 @@ def home_view(request):
         "test": "test",
     }
     return render(request, "home.html", context)
-
-def detailed_view(request):
-    context = {
-        "test": "test",
-    }
-    return render(request, "home.html", context)
