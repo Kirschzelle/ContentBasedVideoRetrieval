@@ -39,4 +39,5 @@ Download videos you want to search and place them into './data/videos/'.
    python manage.py makemigrations
    python manage.py migrate
    python manage.py import_videos
+   python manage.py extract_clips
    ```
