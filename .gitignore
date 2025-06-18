@@ -1,6 +1,5 @@
 # Project specific
-data/videos/*
-data/videos_additional
+data/*
 .vs
 
 # Byte-compiled / optimized / DLL files

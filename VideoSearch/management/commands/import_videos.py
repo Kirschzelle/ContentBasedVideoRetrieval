@@ -33,7 +33,7 @@ class Command(BaseCommand):
                 continue
 
             video = Video.objects.create(
-                    duration=meta['duration'],
+                    frame_count=meta['frame_count'],
                     fps_num=meta['fps_num'],
                     fps_den=meta['fps_den'],
                     resolution=f"{meta['width']}x{meta['height']}",
@@ -58,22 +58,25 @@ def get_video_metadata(file_path):
         cmd = [
             'ffprobe', '-v', 'error',
             '-select_streams', 'v:0',
-            '-show_entries', 'stream=width,height,r_frame_rate,duration',
+            '-show_entries', 'stream=width,height,r_frame_rate,nb_frames',
             '-of', 'default=noprint_wrappers=1:nokey=1',
-            file_path
+            str(file_path)
         ]
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output = result.stdout.decode().strip().split('\n')
+
         width = int(output[0])
         height = int(output[1])
         fps_num, fps_den = map(int, output[2].split('/'))
-        duration = float(output[3])
+        nb_frames = int(output[3]) if output[3].isdigit() else None
+
         return {
             'width': width,
             'height': height,
             'fps_num': fps_num,
             'fps_den': fps_den,
-            'duration': duration
+            'frame_count': nb_frames
         }
-    except Exception:
+    except Exception as e:
+        print(f"ffprobe failed: {e}")
         return None
