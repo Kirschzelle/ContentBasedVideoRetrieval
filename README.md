@@ -2,7 +2,7 @@
 A Content-Based Video Retrieval System developed on the context of a course on the University of Klagenfurt.
 
 # System Requirements:
-- Python 3.10+
+- Python 3.11.X
 - FFmpeg
 
 ## Install FFmpeg
