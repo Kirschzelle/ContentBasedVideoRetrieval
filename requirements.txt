@@ -2,3 +2,6 @@ Django == 5.2.3
 tensorflow
 ffmpeg-python
 pillow
+colorama
+numpy
+scipy>=1.9

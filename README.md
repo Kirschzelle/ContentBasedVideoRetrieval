@@ -30,6 +30,10 @@ brew install ffmpeg
 
 # Setup
 
+Clone project:
+   ```bash
+   git clone --recurse-submodules https://github.com/Kirschzelle/ContentBasedVideoRetrieval.git
+   ```
 Download videos you want to search and place them into './data/videos/'.
    ```bash
    python manage.py makemigrations
