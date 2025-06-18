@@ -81,7 +81,6 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style_success(f"Imported {full_path.name} (ID {video.id})"))
 
-
 def is_valid_video(file_path):
     try:
         result = subprocess.run(

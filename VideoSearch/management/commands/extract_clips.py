@@ -69,7 +69,6 @@ def is_clip_coverage_complete(video):
 
     return current >= video.frame_count
 
-
 def extract_clips(model, video, video_path, **kwargs):
     """
     Runs clip boundary detection on a video file using TransNetV2 predictions.
@@ -90,8 +89,6 @@ def extract_clips(model, video, video_path, **kwargs):
     )
 
     return [(int(start), int(end)) for start, end in scenes]
-
-
 
 def multipass_predictions_to_scenes(
     predictions: np.ndarray,

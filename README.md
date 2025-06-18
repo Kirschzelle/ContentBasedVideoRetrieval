@@ -29,7 +29,6 @@ brew install ffmpeg
    ```
 
 # Setup
-
 Clone project:
    ```bash
    git clone --recurse-submodules https://github.com/Kirschzelle/ContentBasedVideoRetrieval.git
