@@ -5,3 +5,8 @@ pillow
 colorama
 numpy
 scipy>=1.9
+torch
+torchvision
+transformers
+timm
+pynvml
