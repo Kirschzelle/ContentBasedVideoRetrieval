@@ -30,30 +30,33 @@ class EmbeddingModelSelector:
                 meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
                 used_mem = meminfo.used / (1024 ** 3)
                 log(f"[Embedding] GPU total: {total_mem:.1f} GB | used: {used_mem:.1f} GB", "info")
+
+                if used_mem / total_mem > 0.2:
+                    log("[Embedding] Warning: High GPU memory usage detected - model loading might fail.", "warning")
             except Exception:
-                log("[Embedding] Could not access GPU memory usage — estimating conservatively.", "warning")
+                log("[Embedding] Could not access GPU memory usage - estimating conservatively.", "warning")
         else:
-            log("[Embedding] pynvml not installed — usage stats unavailable.", "warning")
+            log("[Embedding] pynvml not installed - usage stats unavailable.", "warning")
 
-        available = total_mem - used_mem - 2
+        available = total_mem
 
-        if available > 20:
+        if available >= 5:
             clip = "openai/clip-vit-large-patch14"
-            dino = "vit_large_patch16_224_dino"
+            dino = "vit_base_patch16_224_dino"
             mode = "full"
-        elif available > 16:
-            clip = "openai/clip-vit-large-patch14"
-            dino = "vit_medium_patch16_224_dino"
-            mode = "full"
-        elif available > 10:
+        elif available >= 4:
             clip = "openai/clip-vit-large-patch14"
             dino = "vit_small_patch16_224_dino"
             mode = "full"
-        elif available > 8:
+        elif available >= 3:
+            clip = "openai/clip-vit-large-patch14"
+            dino = "vit_tiny_patch16_224_dino"
+            mode = "full"
+        elif available >= 2:
             clip = "openai/clip-vit-base-patch32"
-            dino = "vit_small_patch16_224_dino"
+            dino = "vit_tiny_patch16_224_dino"
             mode = "full"
-        elif available > 4:
+        elif available >= 1:
             clip = "openai/clip-vit-base-patch32"
             dino = None
             mode = "clip-only"
@@ -61,7 +64,7 @@ class EmbeddingModelSelector:
             clip = "openai/clip-vit-base-patch32"
             dino = None
             mode = "cpu-only"
-            log("[Embedding] Very low VRAM — falling back to CPU-only embedding.", "warning")
+            log("[Embedding] Very low VRAM - falling back to CPU-only embedding.", "warning")
 
         log(f"[Embedding] Selected config: CLIP={clip}, DINO={dino}, Mode={mode}", "info")
         return clip, dino, mode
