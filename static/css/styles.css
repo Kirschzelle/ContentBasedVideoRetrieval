@@ -6,6 +6,27 @@ body {
     padding: 0;
 }
 
+h2 {
+    text-align: center;
+    margin: 10;
+}
+
+.clip-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    justify-content: center;
+    max-width: 1200px;
+    margin: auto;
+}
+
+.clip-card {
+    background-color: #222;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: transform 0.2s ease;
+}
+
 .preview-container {
     position: relative;
     width: 320px;
@@ -94,7 +115,7 @@ body {
     z-index: 2;
 }
 
-#time-left {
+.time-left {
     min-width: 50px;
     text-align: center;
 }
