@@ -46,6 +46,7 @@ h2 {
 .preview-video {
     opacity: 0;
     pointer-events: none;
+    z-index: 0;
 }
 
 .preview-container:hover .preview-video {
@@ -70,6 +71,7 @@ h2 {
     align-items: center;
     opacity: 0;
     gap: 8px;
+    z-index: 1;
 }
 
 .preview-container:hover .video-overlay {
