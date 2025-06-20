@@ -10,11 +10,8 @@
 <h2>Results for "{{ query }}":</h2>
 <div class="clip-grid">
   {% for clip in clips %}
-  <div class="clip-card preview-container video-preview" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
+  <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.media_url }}" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
     <img src="{% static 'Unbenannt.PNG' %}" alt="Clip" class="thumbnail">
-    <video class="preview-video" muted playsinline preload="metadata">
-      <source src="{{ clip.video.media_url }}" type="video/mp4">
-    </video>
     <div class="video-overlay">
       <div class="progress-bar">
         <div class="hit-area"></div>
@@ -26,6 +23,13 @@
   </div>
   {% endfor %}
 </div>
+
+<div id="video-pool" style="display:none;">
+  {% for video_url in video_ids %}
+    <video id="{{ video_url }}" muted playsinline preload="auto" src="{{ video_url }}"></video>
+  {% endfor %}
+</div>
+
 {% elif query %}
 <p>No clips found matching "{{ query }}".</p>
 {% endif %}
