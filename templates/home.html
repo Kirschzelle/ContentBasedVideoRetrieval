@@ -2,16 +2,35 @@
 {% load static %}
 
 {% block content %}
-<form method="GET">
-  <input type="text" name="q" placeholder="Query..." required>
-</form>
+<div class="main-content">
+<div class="sidebar">
+  <a href="/" class="home-button">
+    <i class="fas fa-home"></i>
+  </a>
+    <form method="GET">
+      <input type="text" name="q" placeholder="Query..." required>
+    </form>
+
+    <div class="drag-drop-area">
+      <p>Drag & Drop for: Color Filter</p>
+      <img class="previewImage" src="" alt="Preview" style="display:none;">
+    </div>
+
+    <div class="drag-drop-area">
+      <p>Drag & Drop for: xx Filter</p>
+      <img class="preview-image" src="" alt="Preview" style="display:none;">
+    </div>
+</div>
 
 {% if clips %}
+<div class="clips">
 <h2>Results for "{{ query }}":</h2>
 <div class="clip-grid">
   {% for clip in clips %}
   <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.media_url }}" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
-    <img src="{% static 'Unbenannt.PNG' %}" alt="Clip" class="thumbnail">
+    <a href="{% url 'detailed_view' clip.start_frame %}"> <!-- TODO: Change to keyframe_id -->
+      <img src="{% static 'Unbenannt.PNG' %}" alt="Clip" class="thumbnail">
+    </a>
     <div class="video-overlay">
       <div class="progress-bar">
         <div class="hit-area"></div>
@@ -23,6 +42,7 @@
   </div>
   {% endfor %}
 </div>
+</div>
 
 <div id="video-pool" style="display:none;">
   {% for video_url in video_ids %}
@@ -33,6 +53,6 @@
 {% elif query %}
 <p>No clips found matching "{{ query }}".</p>
 {% endif %}
-
+</div>
 <script src="{% static 'js/video-preview.js' %}"></script>
 {% endblock %}

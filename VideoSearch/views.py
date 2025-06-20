@@ -25,8 +25,8 @@ def home_view(request):
 
     return render(request, "home.html", context)
 
-def detailed_view(request):
+def detailed_view(request, start_frame): #TODO: Change to keyframe_id
     context = {
-        "test": "test",
+        "start_frame": start_frame,
     }
-    return render(request, "home.html", context)
+    return render(request, "detailed_view.html", context)
