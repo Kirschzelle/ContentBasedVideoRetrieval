@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from .models import Clip
 
 # Create your views here.
@@ -26,7 +26,8 @@ def home_view(request):
     return render(request, "home.html", context)
 
 def detailed_view(request, start_frame): #TODO: Change to keyframe_id
+    clip = Clip.objects.filter(start_frame=start_frame).first() #TODO: replace this with get_object_or_404(keyframe_id=keyframe_id)
     context = {
-        "start_frame": start_frame,
+        "clip": clip,
     }
     return render(request, "detailed_view.html", context)
