@@ -3,56 +3,61 @@
 
 {% block content %}
 <div class="main-content">
-<div class="sidebar">
-  <a href="/" class="home-button">
-    <i class="fas fa-home"></i>
-  </a>
-    <form method="GET">
-      <input type="text" name="q" placeholder="Query..." required>
-    </form>
-
-    <div class="drag-drop-area">
-      <p>Drag & Drop for: Color Filter</p>
-      <img class="previewImage" src="" alt="Preview" style="display:none;">
-    </div>
-
-    <div class="drag-drop-area">
-      <p>Drag & Drop for: xx Filter</p>
-      <img class="preview-image" src="" alt="Preview" style="display:none;">
-    </div>
-</div>
-
-{% if clips %}
-<div class="clips">
-<h2>Results for "{{ query }}":</h2>
-<div class="clip-grid">
-  {% for clip in clips %}
-  <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.media_url }}" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
-    <a href="{% url 'detailed_view' clip.start_frame %}"> <!-- TODO: Change to keyframe_id -->
-      <img src="{% static 'test.png' %}" alt="Clip" class="thumbnail">
+  <div class="sidebar">
+    <a href="/" class="home-button">
+      <i class="fas fa-home"></i>
     </a>
-    <div class="video-overlay">
-      <div class="progress-bar">
-        <div class="hit-area"></div>
-        <div class="progress-fill"></div>
-        <div class="progress-knob"></div>
+      <form method="GET">
+        <input type="text" name="q" placeholder="Query..." required>
+      </form>
+
+      <div class="drag-drop-area">
+        <p>Drag & Drop for: Color Filter</p>
+        <img class="preview-image" src="" alt="Preview" style="display:none;">
       </div>
-      <span class="time-left">0:00</span>
+  </div>
+
+  {% if clips %}
+  <div class="clips">
+  <h2>Results for "{{ query }}":</h2>
+    <div class="clip-grid">
+      {% for clip in clips %}
+      <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.media_url }}" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
+        <a href="{% url 'detailed_view' clip.start_frame %}?q={{ query|urlencode }}" draggable="false"> <!-- TODO: Change to keyframe_id -->
+          <!-- THIS IS JUST FOR TESTING THE FILTER -->
+          {% if forloop.counter0|divisibleby:2 %}
+          {% with img_name='test.png' %}
+            <img src="{% static img_name %}" alt="Clip" class="thumbnail draggable-image" draggable="true" />
+          {% endwith %}
+          {% else %}
+          {% with img_name='test2.png' %}
+            <img src="{% static img_name %}" alt="Clip" class="thumbnail draggable-image" draggable="true" />
+          {% endwith %}
+          {% endif %}
+        </a>
+        <div class="video-overlay">
+          <div class="progress-bar">
+            <div class="hit-area"></div>
+            <div class="progress-fill"></div>
+            <div class="progress-knob"></div>
+          </div>
+          <span class="time-left">0:00</span>
+        </div>
+      </div>
+      {% endfor %}
     </div>
   </div>
-  {% endfor %}
-</div>
-</div>
 
-<div id="video-pool" style="display:none;">
-  {% for video_url in video_ids %}
-    <video id="{{ video_url }}" muted playsinline preload="auto" src="{{ video_url }}"></video>
-  {% endfor %}
-</div>
+  <div id="video-pool" style="display:none;">
+    {% for video_url in video_ids %}
+      <video id="{{ video_url }}" muted playsinline preload="auto" src="{{ video_url }}"></video>
+    {% endfor %}
+  </div>
 
-{% elif query %}
-<p>No clips found matching "{{ query }}".</p>
-{% endif %}
+  {% elif query %}
+  <p>No clips found matching "{{ query }}".</p>
+  {% endif %}
 </div>
 <script src="{% static 'js/video-preview.js' %}"></script>
+<script src="{% static 'js/drag-images.js' %}"></script>
 {% endblock %}

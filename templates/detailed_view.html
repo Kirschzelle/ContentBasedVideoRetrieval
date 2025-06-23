@@ -2,29 +2,27 @@
 {% load static %}
 
 {% block content %}
-<div class="main-content">
-<div class="sidebar">
-    <a href="/" class="home-button">
+<div class="detailed-content">
+    <a href="/?q={{ query }}" class="home-button">
         <i class="fas fa-arrow-circle-left"></i>
     </a>
-</div>
-</div>
-<section class="keyframe">
-    <h4>Your Keyframe:</h4>
-    <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.media_url }}" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
-        <img src="{% static 'test.png' %}" alt="Clip" class="thumbnail">
-        <div class="video-overlay">
-          <div class="progress-bar">
-            <div class="hit-area"></div>
-            <div class="progress-fill"></div>
-            <div class="progress-knob"></div>
-          </div>
-          <span class="time-left">0:00</span>
+    <section class="keyframe">
+        <h4>Your Keyframe:</h4>
+        <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.media_url }}" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
+            <img src="{% static 'test.png' %}" alt="Clip" class="thumbnail">
+            <div class="video-overlay">
+            <div class="progress-bar">
+                <div class="hit-area"></div>
+                <div class="progress-fill"></div>
+                <div class="progress-knob"></div>
+            </div>
+            <span class="time-left">0:00</span>
+            </div>
         </div>
-    </div>
-    <button id="submit" type="submit" class="submit-button" data-video-id="{{ clip.video.file_name }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">Submit to the DRES Server</button>
-    <div id="submit-result-message" class="submit-result"></div>
-</section>
+        <button id="submit" type="submit" class="submit-button" data-video-id="{{ clip.video.file_name }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">Submit to the DRES Server</button>
+        <div id="submit-result-message" class="submit-result"></div>
+    </section>
+</div>
 
 <div id="video-pool" style="display:none;">
     <video id="{{ clip.video.media_url }}" muted playsinline preload="auto" src="{{ clip.video.media_url }}"></video>
