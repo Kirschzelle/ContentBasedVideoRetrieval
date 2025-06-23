@@ -29,7 +29,7 @@
   {% for clip in clips %}
   <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.media_url }}" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
     <a href="{% url 'detailed_view' clip.start_frame %}"> <!-- TODO: Change to keyframe_id -->
-      <img src="{% static 'Unbenannt.PNG' %}" alt="Clip" class="thumbnail">
+      <img src="{% static 'test.png' %}" alt="Clip" class="thumbnail">
     </a>
     <div class="video-overlay">
       <div class="progress-bar">

@@ -1,5 +1,13 @@
 document.getElementById("submit").addEventListener("click", async function () {
-    const button = this;
+    const submitButton = this;
+    const videoId = submitButton.dataset.videoId;
+
+    const startFrame = parseInt(submitButton.dataset.startFrame);
+    const endFrame = parseInt(submitButton.dataset.endFrame);
+    const fps = parseFloat(submitButton.dataset.fps);
+
+    const startMilliseconds = Math.round((startFrame / fps) * 1000);
+    const endMilliseconds = Math.round((endFrame / fps) * 1000);
 
     try {
         // LOGIN
@@ -45,7 +53,7 @@ document.getElementById("submit").addEventListener("click", async function () {
         console.log("Using evaluationId:", evaluationId, taskName);
 
         //SUBMIT DATA
-        /*const submitResponse = await fetch(`https://vbs.videobrowsing.org/api/v2/submit/${evaluationId}`, {
+        const submitResponse = await fetch(`https://vbs.videobrowsing.org/api/v2/submit/${evaluationId}`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -55,14 +63,14 @@ document.getElementById("submit").addEventListener("click", async function () {
             body: JSON.stringify({
                 answerSets: [
                     {
-                        // taskId or taskName are optional — inferred if not provided
+                        taskName: taskName,
                         answers: [
                             {
-                                text: null, // or a string if needed
-                                mediaItemName: "your-video-id", // <== change this!
-                                mediaItemCollectionName: "IVADL", // required if not inferred
-                                start: 10000,  // in milliseconds
-                                end: 10000     // same as start if it's a single point
+                                text: null,
+                                mediaItemName: videoId,
+                                mediaItemCollectionName: "IVADL",
+                                start: startMilliseconds,
+                                end: endMilliseconds
                             }
                         ]
                     }
@@ -75,7 +83,10 @@ document.getElementById("submit").addEventListener("click", async function () {
         }
 
         const submitResult = await submitResponse.json();
-        console.log("Submit response:", submitResult);*/
+        console.log("Submit response:", submitResult);
+
+        const resultMessage = document.getElementById("submit-result-message");
+        resultMessage.textContent = submitResult.description;
     } catch (err) {
         console.error(err);
         alert("❌ Error submitting to DRES: " + err.message);

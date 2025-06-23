@@ -215,3 +215,9 @@ h2 {
 .submit-button:hover {
     background-color: #0c75d1;
 }
+
+.submit-result {
+    margin-top: 1em;
+    font-weight: bold;
+    font-size: 1.1em;
+}
