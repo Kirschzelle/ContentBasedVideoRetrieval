@@ -16,6 +16,10 @@ class Video(models.Model):
         return settings.MEDIA_URL + relative_path.replace('\\', '/')
     
     @property
+    def file_name(self):
+        return Path(self.file_path).stem
+    
+    @property
     def fps(self) -> float:
         """Return the frames per second as a float."""
         return self.fps_num / self.fps_den if self.fps_den else 1.0
