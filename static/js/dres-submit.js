@@ -1,13 +1,17 @@
+document.getElementById("reset").addEventListener("click", function () {
+    const startFrame = parseInt(this.dataset.startFrame);
+    const fps = parseFloat(this.dataset.fps);
+
+    const startMillisecondsDiv = document.getElementById("startMilliseconds");
+    startMillisecondsDiv.textContent = Math.round((startFrame / fps) * 1000);
+});
+
 document.getElementById("submit").addEventListener("click", async function () {
     const submitButton = this;
     const videoId = submitButton.dataset.videoId;
 
-    const startFrame = parseInt(submitButton.dataset.startFrame);
-    const endFrame = parseInt(submitButton.dataset.endFrame);
-    const fps = parseFloat(submitButton.dataset.fps);
-
-    const startMilliseconds = Math.round((startFrame / fps) * 1000);
-    const endMilliseconds = Math.round((endFrame / fps) * 1000);
+    const startMilliseconds = document.getElementById("startMilliseconds").textContent;
+    const endMilliseconds = document.getElementById("endMilliseconds").textContent;
 
     try {
         // LOGIN
