@@ -6,6 +6,12 @@
     <a href="/?q={{ query }}" class="home-button">
         <i class="fas fa-arrow-circle-left"></i>
     </a>
+    <div class="keyframe-information">
+        <p>Video-ID: <span id="mediaItemName">{{ clip.video.file_name }}</span></p>
+        <p>Start time in milliseconds: <span id="startMilliseconds"></span></p>
+        <p>End time in milliseconds: <span id="endMilliseconds"></span></p>
+        <button id="reset" type="submit" class="reset-button"  data-start-frame="{{ clip.start_frame }}" data-fps="{{ clip.video.fps }}">Reset Starttime</button>
+    </div>
     <section class="keyframe">
         <h4>Your Keyframe:</h4>
         <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.media_url }}" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
@@ -19,7 +25,7 @@
             <span class="time-left">0:00</span>
             </div>
         </div>
-        <button id="submit" type="submit" class="submit-button" data-video-id="{{ clip.video.file_name }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">Submit to the DRES Server</button>
+        <button id="submit" type="submit" class="submit-button" data-video-id="{{ clip.video.file_name }}">Submit to the DRES Server</button>
         <div id="submit-result-message" class="submit-result"></div>
     </section>
 </div>

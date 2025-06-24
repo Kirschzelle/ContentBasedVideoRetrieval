@@ -3,10 +3,8 @@ document.addEventListener("DOMContentLoaded", () => {
     let activeContainer = null;
 
     const containers = document.querySelectorAll(".preview-container.video-preview");
-
     containers.forEach(container => {
         let isDragging = false;
-
         const videoId = container.dataset.videoId;
         const sharedVideo = document.getElementById(videoId);
         const hitArea = container.querySelector('.hit-area');
@@ -20,6 +18,17 @@ document.addEventListener("DOMContentLoaded", () => {
         const startSeconds = startFrame / fps;
         const endSeconds = endFrame / fps;
         const START_TIME = startSeconds //parseFloat(container.dataset.startTime); TODO: Change this back once we have keyframe start timer
+
+        const startMillisecondsDiv = document.getElementById("startMilliseconds");
+        const endMillisecondsDiv = document.getElementById("endMilliseconds");
+        updateDetailedViewInformation(Math.round((startFrame / fps) * 1000));
+
+        function updateDetailedViewInformation(startTime) {
+            if (startMillisecondsDiv && endMillisecondsDiv) {
+                startMillisecondsDiv.textContent = startTime;
+                endMillisecondsDiv.textContent = Math.round((endFrame / fps) * 1000);
+            }
+        }
 
         function formatTime(seconds) {
             const mins = Math.floor(seconds / 60);
@@ -42,6 +51,7 @@ document.addEventListener("DOMContentLoaded", () => {
             clickX = Math.min(Math.max(0, clickX), rect.width);
             const percent = clickX / rect.width;
             const newTime = startSeconds + percent * (endSeconds - startSeconds);
+            updateDetailedViewInformation(Math.round(newTime * 1000));
             if (!isNaN(sharedVideo.duration)) {
                 sharedVideo.currentTime = newTime;
                 updateProgressBar(newTime);
