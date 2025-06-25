@@ -2,7 +2,7 @@
 A Content-Based Video Retrieval System developed on the context of a course on the University of Klagenfurt.
 
 # System Requirements:
-- Python 3.11.X
+- Python 3.11.X (might need 3.10 on mac)
 - FFmpeg
 
 ## Install FFmpeg
@@ -31,12 +31,14 @@ brew install ffmpeg
 # Setup
 Clone project:
    ```bash
-   git clone --recurse-submodules https://github.com/Kirschzelle/ContentBasedVideoRetrieval.git
+   git clone https://github.com/Kirschzelle/ContentBasedVideoRetrieval.git
    ```
 Download videos you want to search and place them into './data/videos/'.
    ```bash
+   pip install -r "requirements_win.txt"
    python manage.py makemigrations
    python manage.py migrate
    python manage.py import_videos
    python manage.py extract_clips
    ```
+   Note: If on mac use requirements_mac.txt

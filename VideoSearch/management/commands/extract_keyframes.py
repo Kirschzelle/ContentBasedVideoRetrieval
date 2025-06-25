@@ -4,6 +4,7 @@ from VideoSearch.management.commands.extract_clips import multipass_predictions_
 from VideoSearch.models import ClipPredictionCache, Clip, Keyframe
 from VideoSearch.utils.embeddings import ImageEmbedder
 from VideoSearch.utils.visual_feature_extractor import VisualFeatureExtractor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import numpy as np
 
@@ -11,65 +12,72 @@ class Command(BaseCommand):
     help = "Extract keyframes from newly extracted clips."
 
     def add_arguments(self, parser):
-        parser.add_argument('--debugging', action='store_true', help='Save keyframe debug images.')
         parser.add_argument('--threshold', type=float, default=0.35, help='Distance threshold for keyframe uniqueness.')
         parser.add_argument('--search-range-factor', type=float, default=0.95, help='Fraction of region used to search around potential keyframe.')
         parser.add_argument('--frames-to-compare', type=int, default=25, help='How many frames to sample when searching for keyframes.')
 
     def handle(self, *args, **kwargs):
-        debugging = kwargs.get('debugging', False)
         threshold = kwargs.get('threshold', 0.35)
         search_range_factor = kwargs.get('search_range_factor', 0.95)
         frames_to_compare = kwargs.get('frames_to_compare', 25)
-        candidates = ClipPredictionCache.objects.select_related("clip").all()
 
+        candidates = ClipPredictionCache.objects.select_related("clip").all()
         if not candidates:
             self.stdout.write(self.style_warning("No clips require keyframe extraction."))
             return
-        
+
         feature_extractor = VisualFeatureExtractor(command=self)
 
-        for entry in candidates:
-            clip = entry.clip
-            self.stdout.write(self.style_info(f"Processing clip {clip.id} (Video {clip.video.id}, frames {clip.start_frame}-{clip.end_frame})"))
-
-            deleted_count, _ = Keyframe.objects.filter(clip=clip).delete()
-            if deleted_count > 0:
-                self.stdout.write(self.style_warning(f"Deleted {deleted_count} old keyframes."))
-
-            probs = entry.load_predictions()
-            change_regions = multipass_predictions_to_scenes(probs, 0.01, 1, 5, 2, 50, clip.fps())
-            self.stdout.write(self.style_info(f"Detected {len(change_regions)} change regions."))
-
-            for start, end in change_regions:
-                potential_keyframe = int((start + end) / 2)
-                try_for_potential_keyframe(
+        # Use a thread pool for parallel processing
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(
+                    process_clip_entry,
+                    entry,
                     feature_extractor,
-                    clip,
-                    potential_keyframe,
-                    start,
-                    end,
-                    int((end - start) * search_range_factor),
                     threshold,
-                    frames_to_compare
+                    search_range_factor,
+                    frames_to_compare,
+                    self
                 )
+                for entry in candidates
+            ]
 
-            self.stdout.write(self.style_success(f"Extracted {Keyframe.objects.filter(clip=clip).count()} keyframes."))
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    self.stdout.write(self.style_error(f"Exception during keyframe extraction: {e}"))
 
-            entry.delete()
+def process_clip_entry(entry, feature_extractor: VisualFeatureExtractor, threshold, search_range_factor, frames_to_compare, command=None):
+    clip = entry.clip
+    if command:
+        command.stdout.write(command.style_info(f"Processing clip {clip.id} (Video {clip.video.id}, frames {clip.start_frame}-{clip.end_frame})"))
 
-        if debugging:
-                debug_dir = Path("data/debug/keyframes") / str(clip.id)
-                debug_dir.mkdir(parents=True, exist_ok=True)
+    Keyframe.objects.filter(clip=clip).delete()
 
-                for keyframe in Keyframe.objects.filter(clip=clip):
-                    img = keyframe.clip.get_frame_image(keyframe.frame)
-                    if img is not None:
-                        filename = f"frame{keyframe.frame}.jpg"
-                        img.save(debug_dir / filename)
+    probs = entry.load_predictions()
+    change_regions = multipass_predictions_to_scenes(probs, 0.01, 1, 5, 2, 50, clip.fps())
+    if command:
+        command.stdout.write(command.style_info(f"Detected {len(change_regions)} change regions."))
 
-                self.stdout.write(self.style_notice(f"Saved keyframes to {debug_dir}"))
+    for start, end in change_regions:
+        potential_keyframe = int((start + end) / 2)
+        try_for_potential_keyframe(
+            feature_extractor,
+            clip,
+            potential_keyframe,
+            start,
+            end,
+            int((end - start) * search_range_factor),
+            threshold,
+            frames_to_compare
+        )
 
+    if command:
+        command.stdout.write(command.style_success(f"Extracted {Keyframe.objects.filter(clip=clip).count()} keyframes."))
+
+    entry.delete()
 
 def try_for_potential_keyframe(
     feature_extractor: VisualFeatureExtractor,
