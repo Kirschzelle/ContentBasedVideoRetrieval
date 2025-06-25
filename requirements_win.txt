@@ -1,0 +1,18 @@
+--index-url https://download.pytorch.org/whl/cu118
+
+torch == 2.6.0
+torchvision == 0.21.0
+torchaudio == 2.6.0
+
+Django == 5.2.3
+tensorflow
+ffmpeg-python
+pillow
+colorama
+numpy
+scipy>=1.9
+transformers
+timm
+pynvml
+opencv-python
+scikit-learn >= 1.4

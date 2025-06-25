@@ -1,6 +1,6 @@
 from VideoSearch.management.base import StyledCommand as BaseCommand
-from VideoSearch.models import Video, Clip
-from transnetv2.inference.transnetv2 import TransNetV2
+from VideoSearch.models import Video, Clip, ClipPredictionCache
+from third_party.transnetv2.inference.transnetv2 import TransNetV2
 from scipy.signal import argrelextrema
 from pathlib import Path
 import numpy as np
@@ -45,14 +45,15 @@ class Command(BaseCommand):
 
             self.stdout.write(self.style_info(f"Processing {path.name}"))
 
-            clips = extract_clips(model, video, path, **kwargs)
+            clips, predictions = extract_clips(model, video, path, **kwargs)
 
             for start_frame, end_frame in clips:
-                Clip.objects.create(
+                clip = Clip.objects.create(
                     video=video,
                     start_frame=start_frame,
                     end_frame=end_frame
                 )
+                ClipPredictionCache.store(clip, predictions[start_frame:end_frame + 1])
 
             self.stdout.write(self.style_success(f"Stored {len(clips)} clips for {path.name}"))
             
@@ -78,7 +79,7 @@ def extract_clips(model, video, video_path, **kwargs):
     """
     _, single_frame_predictions, _ = model.predict_video(str(video_path))
 
-    fps = video.fps_num / video.fps_den
+    fps = video.fps()
 
     settings = {k: kwargs.get(k, v) for k, v in DEFAULT_CLIP_EXTRACTION_SETTINGS.items()}
 
@@ -88,7 +89,7 @@ def extract_clips(model, video, video_path, **kwargs):
         **settings,
     )
 
-    return [(int(start), int(end)) for start, end in scenes]
+    return [(int(start), int(end)) for start, end in scenes], single_frame_predictions
 
 def multipass_predictions_to_scenes(
     predictions: np.ndarray,
@@ -97,7 +98,7 @@ def multipass_predictions_to_scenes(
     order_low: int,
     max_pass_seconds: float,
     passes: int,
-    fps: int
+    fps: float
 ):
     """
     Runs multiple passes of local maxima detection with decreasing thresholds and increasing smoothing.
