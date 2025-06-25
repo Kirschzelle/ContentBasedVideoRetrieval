@@ -73,55 +73,55 @@ class ImageEmbedder:
 
         return features
 
-    def calculate_distance(self, emb1: np.ndarray, emb2: np.ndarray) -> float:
+    def get_combined_distance_to_set(self, query: dict, feature_set: list[dict]):
         """
-        Computes cosine distance (1 - cosine similarity) between two normalized embeddings.
+        Given one embedding dict and a list of others, compute min/max combined distances.
         """
-        return float(cosine(emb1, emb2))
+        distances = [calculate_combined_distance(query, f) for f in feature_set]
+        return min(distances), max(distances)
 
-    def calculate_combined_distance(self, a: dict, b: dict) -> float:
+    def get_all_combined_distances(self, queries: list[dict], references: list[dict]) -> list[list[float]]:
+        return [
+            [calculate_combined_distance(q, r) for r in references]
+            for q in queries
+        ]
+
+def get_distance_to_existing_keyframes(clip, query_features: dict):
+    """
+    Computes min/max distance from the given embedding dict to keyframes in the clip.
+    Returns (min_distance, max_distance). If no keyframes exist, returns (1.0, 1.0).
+    """
+    keyframes = Keyframe.objects.filter(clip=clip)
+    if not keyframes.exists():
+        return 1.0, 1.0
+
+    distances = []
+    for kf in keyframes:
+        features_kf = {
+            "clip_emb": kf.load_embedding_clip(),
+            "dino_emb": kf.load_embedding_dino()
+        }
+        dist = calculate_combined_distance(query_features, features_kf)
+        distances.append(dist)
+
+    return min(distances), max(distances)
+
+def calculate_distance(emb1: np.ndarray, emb2: np.ndarray) -> float:
+    """
+    Computes cosine distance (1 - cosine similarity) between two normalized embeddings.
+    """
+    return float(cosine(emb1, emb2))
+
+def calculate_combined_distance(a: dict, b: dict) -> float:
         distances = []
 
         if "clip_emb" in a and "clip_emb" in b:
-            distances.append(self.calculate_distance(a["clip_emb"], b["clip_emb"]))
+            distances.append(calculate_distance(a["clip_emb"], b["clip_emb"]))
 
         if "dino_emb" in a and "dino_emb" in b and a["dino_emb"] is not None and b["dino_emb"] is not None:
-            distances.append(self.calculate_distance(a["dino_emb"], b["dino_emb"]))
+            distances.append(calculate_distance(a["dino_emb"], b["dino_emb"]))
 
         if not distances:
             raise ValueError("No valid embeddings provided for distance calculation.")
 
         return float(np.mean(distances))
-
-    def get_combined_distance_to_set(self, query: dict, feature_set: list[dict]):
-        """
-        Given one embedding dict and a list of others, compute min/max combined distances.
-        """
-        distances = [self.calculate_combined_distance(query, f) for f in feature_set]
-        return min(distances), max(distances)
-
-    def get_all_combined_distances(self, queries: list[dict], references: list[dict]) -> list[list[float]]:
-        return [
-            [self.calculate_combined_distance(q, r) for r in references]
-            for q in queries
-        ]
-
-    def get_distance_to_existing_keyframes(self, clip, query_features: dict):
-        """
-        Computes min/max distance from the given embedding dict to keyframes in the clip.
-        Returns (min_distance, max_distance). If no keyframes exist, returns (1.0, 1.0).
-        """
-        keyframes = Keyframe.objects.filter(clip=clip)
-        if not keyframes.exists():
-            return 1.0, 1.0
-
-        distances = []
-        for kf in keyframes:
-            features_kf = {
-                "clip_emb": kf.load_embedding_clip(),
-                "dino_emb": kf.load_embedding_dino()
-            }
-            dist = self.calculate_combined_distance(query_features, features_kf)
-            distances.append(dist)
-
-        return min(distances), max(distances)

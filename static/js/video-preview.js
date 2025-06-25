@@ -17,11 +17,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const fps = parseFloat(container.dataset.fps);
         const startSeconds = startFrame / fps;
         const endSeconds = endFrame / fps;
-        const START_TIME = startSeconds //parseFloat(container.dataset.startTime); TODO: Change this back once we have keyframe start timer
+        const START_TIME = parseFloat(container.dataset.startTime)
 
         const startMillisecondsDiv = document.getElementById("startMilliseconds");
         const endMillisecondsDiv = document.getElementById("endMilliseconds");
-        updateDetailedViewInformation(Math.round((startFrame / fps) * 1000));
+        updateDetailedViewInformation(START_TIME * 1000);
 
         function updateDetailedViewInformation(startTime) {
             if (startMillisecondsDiv && endMillisecondsDiv) {
@@ -96,11 +96,15 @@ document.addEventListener("DOMContentLoaded", () => {
             sharedVideo.classList.add("preview-video");
             sharedVideo.style.opacity = "1";
 
-            if (Math.abs(sharedVideo.currentTime - startSeconds) > 0.1) {
-                sharedVideo.currentTime = START_TIME;
-            }
+            sharedVideo.pause();
+            sharedVideo.currentTime = START_TIME;
 
-            sharedVideo.play().catch(() => { });
+            const onSeeked = () => {
+                sharedVideo.play().catch(() => { });
+                sharedVideo.removeEventListener("seeked", onSeeked);
+            };
+
+            sharedVideo.addEventListener("seeked", onSeeked);
         });
 
         container.addEventListener("mouseleave", () => {
