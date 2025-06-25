@@ -14,8 +14,8 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style_info("=== Extracting Keyframes ==="))
         if torch.cuda.is_available():
-            call_command("extract_keyframes", debugging=True)
+            call_command("extract_keyframes", search_range_factor = 0.75, frames_to_compare = 10)
         else:
-            call_command("extract_keyframes", debugging=True, search_range_factor = 0.5, frames_to_compare = 5)
+            call_command("extract_keyframes", search_range_factor = 0.5, frames_to_compare = 5)
 
         self.stdout.write(self.style_success("Full import completed."))

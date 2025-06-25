@@ -14,8 +14,8 @@
     </div>
     <section class="keyframe">
         <h4>Your Keyframe:</h4>
-        <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.media_url }}" data-start-time="{{ start_time }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
-            <img src="{% static 'test.png' %}" alt="Clip" class="thumbnail">
+        <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.id }}" data-start-time="{{ start }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
+            <img src="{{ keyframe_img }}" alt="Clip" class="thumbnail">
             <div class="video-overlay">
             <div class="progress-bar">
                 <div class="hit-area"></div>
@@ -31,7 +31,7 @@
 </div>
 
 <div id="video-pool" style="display:none;">
-    <video id="{{ clip.video.media_url }}" muted playsinline preload="auto" src="{{ clip.video.media_url }}"></video>
+    <video id="{{ clip.video.id }}" muted playsinline preload="auto" src="{{ media }}"></video>
 </div>
 <script src="{% static 'js/video-preview.js' %}"></script>
 <script src="{% static 'js/dres-submit.js' %}"></script>
