@@ -2,6 +2,7 @@ from VideoSearch.management.base import StyledCommand as BaseCommand
 from VideoSearch.models import Video
 from pathlib import Path
 import subprocess
+import time
 
 class Command(BaseCommand):
     help = "Scan video directory (\'.data/videos/\') and import metadata into the database."
@@ -36,22 +37,21 @@ class Command(BaseCommand):
                 video.delete()
                 continue
 
-            meta = get_video_metadata(db_path)
-            if not meta or not meta['frame_count']:
+            meta = self.get_video_metadata(db_path, False)
+            if not meta:
                 deleted_filenames.append(db_path.name)
                 video.delete()
                 continue
 
             new_resolution = f"{meta['width']}x{meta['height']}"
             if (
-                video.frame_count != meta['frame_count'] or
+                (video.frame_count != meta['frame_count'] and meta['frame_count'] != None) or
                 video.fps_num != meta['fps_num'] or
                 video.fps_den != meta['fps_den'] or
                 video.resolution != new_resolution
             ):
                 deleted_filenames.append(db_path.name)
                 video.delete()
-                continue
 
         if deleted_filenames:
             self.stdout.write(self.style_info(f"Removed {len(deleted_filenames)} video(s) no longer present:"))
@@ -64,7 +64,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style_info(f"Already imported: {full_path.name} - skipping."))
             return
 
-        meta = get_video_metadata(full_path)
+        meta = self.get_video_metadata(full_path)
         if not meta:
             self.stdout.write(self.style_warning(f"Could not read metadata for {full_path.name} - skipping."))
             return
@@ -81,6 +81,89 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style_success(f"Imported {full_path.name} (ID {video.id})"))
 
+    def get_video_metadata(self, file_path, use_fallback = True):
+        try:
+            cmd = [
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height,r_frame_rate,nb_frames',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                str(file_path)
+            ]
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            output = result.stdout.decode().strip().split('\n')
+
+            width = int(output[0])
+            height = int(output[1])
+            fps_num, fps_den = map(int, output[2].split('/'))
+
+            try:
+                nb_frames = int(output[3])
+            except (IndexError, ValueError):
+                nb_frames = None
+
+            if not nb_frames and use_fallback:
+                self.stdout.write(self.style_warning(f"nb_frames not found in metadata, using fallback (this may take a while!): {file_path.name}"))
+                count_cmd = [
+                    'ffprobe', '-v', 'error',
+                    '-select_streams', 'v:0',
+                    '-count_frames',
+                    '-show_entries', 'stream=nb_read_frames',
+                    '-of', 'default=noprint_wrappers=1:nokey=1',
+                    str(file_path)
+                ]
+                count_result = subprocess.run(count_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                count_output = count_result.stdout.decode().strip()
+                if count_output.isdigit():
+                    nb_frames = int(count_output)
+
+                if not nb_frames:
+                    self.stdout.write(self.style_warning(f"{file_path.name}: ffprobe failed, decoding video to count frames..."))
+                    ffmpeg_cmd = [
+                        'ffmpeg', '-i', str(file_path),
+                        '-map', '0:v:0', '-f', 'null', '-'
+                    ]
+
+                    frame_count = 0
+                    last_print_time = time.time()
+
+                    try:
+                        process = subprocess.Popen(ffmpeg_cmd, stderr=subprocess.PIPE, universal_newlines=True)
+
+                        for line in process.stderr:
+                            if 'frame=' in line:
+                                parts = line.strip().split()
+                                for part in parts:
+                                    if part.startswith("frame="):
+                                        try:
+                                            current_frame = int(part.split('=')[1])
+                                            if current_frame > frame_count:
+                                                frame_count = current_frame
+                                        except ValueError:
+                                            continue
+
+                            if time.time() - last_print_time > 1:
+                                print(f"\r  → Decoded frames: {frame_count}", end='', flush=True)
+                                last_print_time = time.time()
+
+                        process.wait()
+                        self.stdout.write(self.style_success(f"Fully decoded video! Number of frames: {frame_count}"))
+                        nb_frames = frame_count if frame_count > 0 else None
+
+                    except Exception as decode_error:
+                        self.stdout.write(self.style_error(f"Error during ffmpeg decoding fallback: {decode_error}"))
+
+            return {
+                'width': width,
+                'height': height,
+                'fps_num': fps_num,
+                'fps_den': fps_den,
+                'frame_count': nb_frames
+            }
+        except Exception as e:
+            print(f"ffprobe failed: {e}")
+            return None
+
 def is_valid_video(file_path):
     try:
         result = subprocess.run(
@@ -92,31 +175,3 @@ def is_valid_video(file_path):
         return 'codec_type=video' in result.stdout.decode()
     except Exception:
         return False
-
-def get_video_metadata(file_path):
-    try:
-        cmd = [
-            'ffprobe', '-v', 'error',
-            '-select_streams', 'v:0',
-            '-show_entries', 'stream=width,height,r_frame_rate,nb_frames',
-            '-of', 'default=noprint_wrappers=1:nokey=1',
-            str(file_path)
-        ]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        output = result.stdout.decode().strip().split('\n')
-
-        width = int(output[0])
-        height = int(output[1])
-        fps_num, fps_den = map(int, output[2].split('/'))
-        nb_frames = int(output[3]) if output[3].isdigit() else None
-
-        return {
-            'width': width,
-            'height': height,
-            'fps_num': fps_num,
-            'fps_den': fps_den,
-            'frame_count': nb_frames
-        }
-    except Exception as e:
-        print(f"ffprobe failed: {e}")
-        return None
