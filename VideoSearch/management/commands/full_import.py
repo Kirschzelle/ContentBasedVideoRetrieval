@@ -12,6 +12,6 @@ class Command(BaseCommand):
         call_command("extract_clips")
 
         self.stdout.write(self.style_info("=== Extracting Keyframes ==="))
-        call_command("extract_keyframes")
+        call_command("extract_keyframes", debugging=True)
 
         self.stdout.write(self.style_success("Full import completed."))
