@@ -1,3 +1,5 @@
+import os
+from django.conf import settings
 from django.db import models
 from pathlib import Path
 import numpy as np
@@ -13,6 +15,20 @@ class Video(models.Model):
     fps_den = models.IntegerField()
     resolution = models.CharField(max_length=50)
     file_path = models.FilePathField(path="./data/videos/", max_length=500, unique=True)
+    
+    @property
+    def media_url(self):
+        relative_path = os.path.relpath(self.file_path, settings.MEDIA_ROOT)
+        return settings.MEDIA_URL + relative_path.replace('\\', '/')
+    
+    @property
+    def file_name(self):
+        return Path(self.file_path).stem
+    
+    @property
+    def fps(self) -> float:
+        """Return the frames per second as a float."""
+        return self.fps_num / self.fps_den if self.fps_den else 1.0
 
     def save(self, *args, **kwargs):
         self.file_path = str(Path(self.file_path).resolve())
