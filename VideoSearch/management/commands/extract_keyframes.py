@@ -3,20 +3,31 @@ from VideoSearch.management.base import StyledCommand as BaseCommand
 from VideoSearch.management.commands.extract_clips import multipass_predictions_to_scenes
 from VideoSearch.models import ClipPredictionCache, Clip, Keyframe
 from VideoSearch.utils.embeddings import ImageEmbedder
+from VideoSearch.utils.visual_feature_extractor import VisualFeatureExtractor
+from pathlib import Path
 import numpy as np
 
 class Command(BaseCommand):
     help = "Extract keyframes from newly extracted clips."
 
+    def add_arguments(self, parser):
+        parser.add_argument('--debugging', action='store_true', help='Save keyframe debug images.')
+        parser.add_argument('--threshold', type=float, default=0.35, help='Distance threshold for keyframe uniqueness.')
+        parser.add_argument('--search-range-factor', type=float, default=0.95, help='Fraction of region used to search around potential keyframe.')
+        parser.add_argument('--frames-to-compare', type=int, default=25, help='How many frames to sample when searching for keyframes.')
 
     def handle(self, *args, **kwargs):
+        debugging = kwargs.get('debugging', False)
+        threshold = kwargs.get('threshold', 0.35)
+        search_range_factor = kwargs.get('search_range_factor', 0.95)
+        frames_to_compare = kwargs.get('frames_to_compare', 25)
         candidates = ClipPredictionCache.objects.select_related("clip").all()
 
         if not candidates:
-            self.stdout.write(self.style_warning(f"No clips require keyframe extraction."))
+            self.stdout.write(self.style_warning("No clips require keyframe extraction."))
             return
-
-        image_embedder = ImageEmbedder(command=self)
+        
+        feature_extractor = VisualFeatureExtractor(command=self)
 
         for entry in candidates:
             clip = entry.clip
@@ -30,45 +41,38 @@ class Command(BaseCommand):
             change_regions = multipass_predictions_to_scenes(probs, 0.01, 1, 5, 2, 50, clip.fps())
             self.stdout.write(self.style_info(f"Detected {len(change_regions)} change regions."))
 
-            total_added = 0
             for start, end in change_regions:
                 potential_keyframe = int((start + end) / 2)
-                added = try_for_potential_keyframe(
-                    image_embedder,
+                try_for_potential_keyframe(
+                    feature_extractor,
                     clip,
                     potential_keyframe,
                     start,
                     end,
-                    int((end - start) * 0.95),
-                    0.35,
-                    25
+                    int((end - start) * search_range_factor),
+                    threshold,
+                    frames_to_compare
                 )
-                if added:
-                    total_added += 1
 
             self.stdout.write(self.style_success(f"Extracted {Keyframe.objects.filter(clip=clip).count()} keyframes."))
 
             entry.delete()
 
-        # For debugging
-        from pathlib import Path
+        if debugging:
+                debug_dir = Path("data/debug/keyframes") / str(clip.id)
+                debug_dir.mkdir(parents=True, exist_ok=True)
 
-        DEBUG_DIR = Path("data/debug")
-        import shutil
+                for keyframe in Keyframe.objects.filter(clip=clip):
+                    img = keyframe.clip.get_frame_image(keyframe.frame)
+                    if img is not None:
+                        filename = f"frame{keyframe.frame}.jpg"
+                        img.save(debug_dir / filename)
 
-        if DEBUG_DIR.exists():
-            shutil.rmtree(DEBUG_DIR)
-        DEBUG_DIR.mkdir(parents=True)
-
-        for keyframe in Keyframe.objects.all():
-            img = keyframe.clip.get_frame_image(keyframe.frame)
-            if img is not None:
-                filename = f"video{keyframe.clip.video.id}_clip{keyframe.clip.id}_frame{keyframe.frame}.jpg"
-                img.save(DEBUG_DIR / filename)
+                self.stdout.write(self.style_notice(f"Saved keyframes to {debug_dir}"))
 
 
 def try_for_potential_keyframe(
-    embedder: ImageEmbedder,
+    feature_extractor: VisualFeatureExtractor,
     clip: Clip,
     potential_keyframe: int,
     lower_bound: int,
@@ -85,17 +89,19 @@ def try_for_potential_keyframe(
     images = clip.get_frame_range_images(start, end)
 
     if not images:
+        if feature_extractor.command:
+            feature_extractor.command.stdout.write(feature_extractor.command.style_warning(f"No images found in range {start}-{end} for clip {clip.id}"))
         return
 
     num_frames = end - start + 1
     step_size = max(1, num_frames // amount_of_frames_to_compare)
 
-    candidates = collect_embedding_candidates(images, start, step_size, clip, embedder, threshold)
+    candidates = feature_extractor.get_candidates(images, start, step_size, clip, threshold)
 
-    while(not candidates):
+    if(not candidates):
         return
 
-    refine_and_store_keyframes(candidates, clip, embedder, threshold)
+    refine_and_store_keyframes(candidates, clip, feature_extractor, threshold)
 
 
 def compute_sampling_bounds(clip : Clip, center_frame, lower_bound, upper_bound, search_range):
@@ -116,61 +122,25 @@ def compute_sampling_bounds(clip : Clip, center_frame, lower_bound, upper_bound,
         return start, end
 
 
-def collect_embedding_candidates(images, start, step_size, clip, embedder, threshold):
-    candidates = []
-
-    for i, image in enumerate(images):
-        if i != 0 and i % step_size != 0:
-            continue
-
-        frame_number = start + i
-        clip_emb, dino_emb = embedder.get_combined_embedding(image)
-
-        min_dist, _ = embedder.get_distance_to_existing_keyframes(clip, clip_emb, dino_emb)
-        if min_dist > threshold:
-            candidates.append((frame_number, clip_emb, dino_emb))
-
-    return candidates
-
-
-def refine_and_store_keyframes(candidates, clip, embedder, threshold):
+def refine_and_store_keyframes(candidates, clip, feature_extractor, threshold):
     while candidates:
-        best_frame = select_representative_keyframe(candidates, embedder)
+        best_frame = feature_extractor.select_representative(candidates)
 
         if not best_frame:
             break
 
-        frame_number, emb_clip, emb_dino = best_frame
-        Keyframe.create(clip, frame_number, emb_clip, emb_dino)
+        frame_number, features = best_frame
+        Keyframe.create(
+            clip,
+            frame_number, 
+            features["clip_emb"], 
+            features["dino_emb"],
+            features["histogram"],
+            features["palette"],
+            features["colorfulness"])
 
         candidates = [
-            (frame, c_emb, d_emb)
-            for frame, c_emb, d_emb in candidates
-            if embedder.get_distance_to_existing_keyframes(clip, c_emb, d_emb)[0] > threshold
+            (frame, features)
+            for frame, features in candidates
+            if feature_extractor.distance_to_existing_keyframes(clip, features)[0] > threshold
         ]
-
-def select_representative_keyframe(candidates, embedder):
-    """
-    Selects the most representative keyframe from a list of (frame, clip_emb, dino_emb) tuples,
-    based on lowest average distance to other candidates.
-
-    :param candidates: List of tuples (frame_number, clip_embedding, dino_embedding)
-    :param embedder: ImageEmbedder instance
-    :return: Tuple (frame_number, clip_embedding, dino_embedding)
-    """
-    best_frame = None
-    best_score = float("inf")
-
-    for i, (frame_i, emb_clip_i, emb_dino_i) in enumerate(candidates):
-        similarities = [
-            embedder.calculate_combined_distance(emb_clip_i, emb_dino_i, emb_clip_j, emb_dino_j)
-            for j, (_, emb_clip_j, emb_dino_j) in enumerate(candidates)
-            if i != j
-        ]
-        median_similarity = np.median(similarities)
-
-        if median_similarity < best_score:
-            best_score = median_similarity
-            best_frame = (frame_i, emb_clip_i, emb_dino_i)
-
-    return best_frame

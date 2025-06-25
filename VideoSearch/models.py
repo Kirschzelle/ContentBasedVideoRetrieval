@@ -22,7 +22,7 @@ class Video(models.Model):
         """Return the frames per second as a float."""
         return self.fps_num / self.fps_den if self.fps_den else 1.0
 
-    def duration(self) -> float:
+    def video_duration(self) -> float:
         """Returns the duration of the video in seconds as a float."""
         return self.duration(self.frame_count)
 
@@ -97,7 +97,7 @@ class Clip(models.Model):
     def fps(self) -> float:
         return self.video.fps()
 
-    def duration(self) -> float:
+    def clip_duration(self) -> float:
         return self.duration(self.total_frames())
 
     def duration(self, frames) -> float:
@@ -158,8 +158,15 @@ class ClipPredictionCache(models.Model):
 class Keyframe(models.Model):
     clip = models.ForeignKey(Clip, on_delete=models.CASCADE)
     frame = models.IntegerField()
+
+    # Embeddings
     embedding_clip = models.BinaryField()
     embedding_dino = models.BinaryField(null=True, blank=True)
+
+    # Color descriptors
+    histogram_hsv = models.BinaryField(null=True, blank=True)
+    dominant_colors = models.BinaryField(null=True, blank=True)
+    colorfulness = models.FloatField(null=True, blank=True)  
 
     class Meta:
         unique_together = ("clip", "frame")
@@ -174,21 +181,37 @@ class Keyframe(models.Model):
     @staticmethod
     def decompress_array(blob: bytes, dtype=np.float32) -> np.ndarray:
         return np.frombuffer(zlib.decompress(blob), dtype=dtype)
-
-    @classmethod
-    def create(cls, clip, frame, embedding_clip: np.ndarray, embedding_dino: np.ndarray = None):
-        compressed_clip = cls.compress_array(embedding_clip)
-        compressed_dino = cls.compress_array(embedding_dino) if embedding_dino is not None else None
-
-        return cls.objects.create(
-            clip=clip,
-            frame=frame,
-            embedding_clip=compressed_clip,
-            embedding_dino=compressed_dino
-        )
-
+    
     def load_embedding_clip(self):
         return self.decompress_array(self.embedding_clip)
 
     def load_embedding_dino(self):
         return self.decompress_array(self.embedding_dino) if self.embedding_dino else None
+
+    def load_histogram_hsv(self):
+        return self.decompress_array(self.histogram_hsv) if self.histogram_hsv else None
+
+    def load_dominant_colors(self):
+        arr = self.decompress_array(self.dominant_colors) if self.dominant_colors else None
+        return arr.reshape(-1, 3) if arr is not None else None
+
+    @classmethod
+    def create(
+        cls,
+        clip,
+        frame,
+        embedding_clip: np.ndarray,
+        embedding_dino: np.ndarray = None,
+        histogram_hsv: np.ndarray = None,
+        dominant_colors: np.ndarray = None,
+        colorfulness: float = None,
+    ):
+        return cls.objects.create(
+            clip=clip,
+            frame=frame,
+            embedding_clip=cls.compress_array(embedding_clip),
+            embedding_dino=cls.compress_array(embedding_dino) if embedding_dino is not None else None,
+            histogram_hsv=cls.compress_array(histogram_hsv) if histogram_hsv is not None else None,
+            dominant_colors=cls.compress_array(dominant_colors) if dominant_colors is not None else None,
+            colorfulness=colorfulness
+        )

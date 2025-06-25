@@ -1,6 +1,6 @@
 from VideoSearch.management.base import StyledCommand as BaseCommand
 from VideoSearch.models import Video, Clip, ClipPredictionCache
-from transnetv2.inference.transnetv2 import TransNetV2
+from third_party.transnetv2.inference.transnetv2 import TransNetV2
 from scipy.signal import argrelextrema
 from pathlib import Path
 import numpy as np
@@ -98,7 +98,7 @@ def multipass_predictions_to_scenes(
     order_low: int,
     max_pass_seconds: float,
     passes: int,
-    fps: int
+    fps: float
 ):
     """
     Runs multiple passes of local maxima detection with decreasing thresholds and increasing smoothing.

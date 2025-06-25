@@ -1,8 +1,11 @@
 import torch
 try:
     import pynvml
-    pynvml.nvmlInit()
-    NVML_AVAILABLE = True
+    try:
+        pynvml.nvmlInit()
+        NVML_AVAILABLE = True
+    except pynvml.NVMLError:
+        NVML_AVAILABLE = False
 except ImportError:
     NVML_AVAILABLE = False
 
@@ -18,7 +21,7 @@ class EmbeddingModelSelector:
 
         if not torch.cuda.is_available():
             log("[Embedding] No GPU found, using CPU-only mode.", "warning")
-            return "openai/clip-vit-base-patch32", None, "cpu-only"
+            return "openai/clip-vit-base-patch32", None, "clip-only"
 
         props = torch.cuda.get_device_properties(0)
         total_mem = props.total_memory / (1024 ** 3)
@@ -63,7 +66,7 @@ class EmbeddingModelSelector:
         else:
             clip = "openai/clip-vit-base-patch32"
             dino = None
-            mode = "cpu-only"
+            mode = "clip-only"
             log("[Embedding] Very low VRAM - falling back to CPU-only embedding.", "warning")
 
         log(f"[Embedding] Selected config: CLIP={clip}, DINO={dino}, Mode={mode}", "info")
