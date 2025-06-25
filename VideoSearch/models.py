@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 from PIL import Image
 
+KEYFRAME_ROOT = Path("data/keyframes")
+
 class Video(models.Model):
     frame_count = models.IntegerField()
     fps_num = models.IntegerField()
@@ -101,6 +103,10 @@ class Video(models.Model):
                 return loaded_images
             else:
                 return [cv2.cvtColor(cv2.imread(str(p)), cv2.COLOR_BGR2RGB) for p in images]
+
+    def media_url(self):
+        rel_path = os.path.relpath(self.file_path, settings.MEDIA_ROOT)
+        return f"{settings.MEDIA_URL}{rel_path.replace(os.sep, '/')}"
     
     def __str__(self):
         return f"Video {self.id}: {self.file_path} ({self.resolution}, {self.fps_num}/{self.fps_den}, {self.frame_count}f)"
@@ -196,7 +202,7 @@ class Keyframe(models.Model):
 
     @staticmethod
     def decompress_array(blob: bytes, dtype=np.float32) -> np.ndarray:
-        return np.frombuffer(zlib.decompress(blob), dtype=dtype)
+        return np.frombuffer(zlib.decompress(blob), dtype=dtype).copy()
     
     def load_embedding_clip(self):
         return self.decompress_array(self.embedding_clip)
@@ -211,6 +217,34 @@ class Keyframe(models.Model):
         arr = self.decompress_array(self.dominant_colors) if self.dominant_colors else None
         return arr.reshape(-1, 3) if arr is not None else None
 
+    def get_image_path(self) -> Path:
+        """Returns the expected disk path for the keyframe image."""
+        return KEYFRAME_ROOT / str(self.clip.id) / f"frame{self.frame}.jpg"
+
+    def save_image(self):
+        """Extracts and saves the keyframe image to disk."""
+        img = self.clip.get_frame_image(self.frame)
+        if img is None:
+            return
+        img_path = self.get_image_path()
+        img_path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(img_path)
+
+    def load_image(self) -> Image.Image | None:
+        """Loads the saved keyframe image from disk."""
+        path = self.get_image_path()
+        return Image.open(path) if path.exists() else None
+
+    def get_features_from_keyframe(self) -> dict:
+        features = {
+            "clip_emb": self.load_embedding_clip(),
+            "dino_emb": self.load_embedding_dino(),
+            "histogram": self.load_histogram_hsv(),
+            "palette": self.load_dominant_colors(),
+            "colorfulness": self.colorfulness,
+        }
+        return features
+
     @classmethod
     def create(
         cls,
@@ -222,7 +256,7 @@ class Keyframe(models.Model):
         dominant_colors: np.ndarray = None,
         colorfulness: float = None,
     ):
-        return cls.objects.create(
+        keyframe = cls.objects.create(
             clip=clip,
             frame=frame,
             embedding_clip=cls.compress_array(embedding_clip),
@@ -231,3 +265,5 @@ class Keyframe(models.Model):
             dominant_colors=cls.compress_array(dominant_colors) if dominant_colors is not None else None,
             colorfulness=colorfulness
         )
+        keyframe.save_image()
+        return keyframe

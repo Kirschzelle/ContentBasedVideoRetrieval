@@ -1,6 +1,6 @@
 import numpy as np
-from VideoSearch.utils.embeddings import ImageEmbedder
-from VideoSearch.utils.color_features import ColorFeatureExtractor
+from VideoSearch.utils.embeddings import ImageEmbedder, calculate_combined_distance as embedding_distance
+from VideoSearch.utils.color_features import ColorFeatureExtractor , compute_distance as color_distance
 
 class VisualFeatureExtractor:
     def __init__(self, use_embeddings=True, use_color=True, command=None):
@@ -59,7 +59,7 @@ class VisualFeatureExtractor:
                 if i == j:
                     continue
 
-                d = self.compute_distance(feat_i, feat_j)
+                d = compute_distance(feat_i, feat_j)
                 distances.append(d)
 
             if distances:
@@ -69,28 +69,6 @@ class VisualFeatureExtractor:
                     best_frame = (frame_i, feat_i)
 
         return best_frame
-
-    def compute_distance(self, feat_a, feat_b):
-        """
-        Compute similarity distance between two feature dicts.
-        Currently uses embeddings + color distances.
-        """
-        distances = []
-        
-        if self.use_embeddings:
-            dist = self.embedder.calculate_combined_distance(feat_a, feat_b)
-            distances.append(dist)
-
-        if self.use_color:
-            dist = self.color.compute_distance(feat_a, feat_b)
-            distances.append(dist)
-
-        combined_score = nonlinear_pooling(distances)
-
-        if not distances:
-            return 1.0
-
-        return combined_score
     
     def distance_to_existing_keyframes(self, clip, features):
         min_distances = []
@@ -134,3 +112,25 @@ def nonlinear_pooling(distances: list[float], alpha: float = 5.0) -> float:
     distances = np.array(distances)
     weights = np.exp(alpha * distances)
     return float(np.sum(distances * weights) / np.sum(weights))
+
+def compute_distance(feat_a, feat_b):
+    """
+    Compute similarity distance between two feature dicts.
+    Currently uses embeddings + color distances.
+    """
+    distances = []
+        
+    if "clip_emb" in feat_a and "clip_emb" in feat_b:
+        dist = embedding_distance(feat_a, feat_b)
+        distances.append(dist)
+
+    if "histogram" in feat_a and "histogram" in feat_b:
+        dist = color_distance(feat_a, feat_b)
+        distances.append(dist)
+
+    combined_score = nonlinear_pooling(distances)
+
+    if not distances:
+        return 1.0
+
+    return combined_score
