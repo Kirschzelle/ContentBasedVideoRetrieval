@@ -1,9 +1,10 @@
 document.getElementById("reset").addEventListener("click", function () {
+    const clipStartFrame = parseInt(this.dataset.clipStartFrame);
     const startFrame = parseInt(this.dataset.startFrame);
     const fps = parseFloat(this.dataset.fps);
 
     const startMillisecondsDiv = document.getElementById("startMilliseconds");
-    startMillisecondsDiv.textContent = Math.round((startFrame / fps) * 1000);
+    startMillisecondsDiv.textContent = Math.round(((clipStartFrame + startFrame) / fps) * 1000);
 });
 
 document.getElementById("submit").addEventListener("click", async function () {
