@@ -63,7 +63,8 @@ class Searcher:
 
         canidate_features = candidate_kf.get_features_from_keyframe()
 
-        emb /= np.linalg.norm(canidate_features["clip_emb"])
+        emb = canidate_features["clip_emb"]
+        emb /= np.linalg.norm(emb)
         distances.append(np.dot(query_embedding, emb))
 
         for kf, categories in filters.items():
@@ -73,6 +74,8 @@ class Searcher:
                     result = ufil.filter_embedding(canidate_features, filter_features)
                 elif category == "colors":
                     result = ufil.filter_colors(canidate_features, filter_features)
+                elif category == "objects":
+                    result = ufil.filter_objects(canidate_features, filter_features)
                 distances.append(result)
 
         alpha = compute_adaptive_alpha(len(distances))

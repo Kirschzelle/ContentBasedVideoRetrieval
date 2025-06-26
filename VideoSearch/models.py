@@ -217,6 +217,9 @@ class Keyframe(models.Model):
     dominant_colors = models.BinaryField(null=True, blank=True)
     colorfulness = models.FloatField(null=True, blank=True)  
 
+    # Object
+    object_labels = models.JSONField(null=True, blank=True)
+
     class Meta:
         unique_together = ("clip", "frame")
 
@@ -244,6 +247,9 @@ class Keyframe(models.Model):
         arr = self.decompress_array(self.dominant_colors) if self.dominant_colors else None
         return arr.reshape(-1, 3) if arr is not None else None
 
+    def load_object_labels(self) -> dict:
+        return self.object_labels or {}
+
     def get_image_path(self) -> Path:
         """Returns the expected disk path for the keyframe image."""
         return KEYFRAME_ROOT / str(self.clip.id) / f"frame{self.frame}.jpg"
@@ -269,6 +275,7 @@ class Keyframe(models.Model):
             "histogram": self.load_histogram_hsv(),
             "palette": self.load_dominant_colors(),
             "colorfulness": self.colorfulness,
+            "objects": self.load_object_labels()
         }
         return features
 
@@ -282,6 +289,7 @@ class Keyframe(models.Model):
         histogram_hsv: np.ndarray = None,
         dominant_colors: np.ndarray = None,
         colorfulness: float = None,
+        object_labels: dict = None
     ):
         keyframe = cls.objects.create(
             clip=clip,
@@ -290,7 +298,8 @@ class Keyframe(models.Model):
             embedding_dino=cls.compress_array(embedding_dino) if embedding_dino is not None else None,
             histogram_hsv=cls.compress_array(histogram_hsv) if histogram_hsv is not None else None,
             dominant_colors=cls.compress_array(dominant_colors) if dominant_colors is not None else None,
-            colorfulness=colorfulness
+            colorfulness=colorfulness,
+            object_labels=object_labels or None
         )
         keyframe.save_image()
         return keyframe
