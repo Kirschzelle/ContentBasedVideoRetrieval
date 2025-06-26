@@ -7,6 +7,7 @@ from utils.search import Searcher
 from collections import defaultdict
 import sys
 import os
+import re
 
 _searcher_instance = None
 
@@ -39,16 +40,15 @@ def api_search_view(request):
     if not query:
         return JsonResponse({"error": "No query provided."}, status=400)
 
-    filters_raw = request.GET.getlist("filters[]")
     filters = defaultdict(list)
+    filter_pattern = re.compile(r'^filters\[(\d+):(\w+)\]$')
 
-    for pair in filters_raw:
-        try:
-            kf_id_str, category = pair.split(":")
-            kf_id = int(kf_id_str)
+    for key in request.GET.keys():
+        match = filter_pattern.match(key)
+        if match:
+            kf_id = int(match.group(1))
+            category = match.group(2)
             filters[kf_id].append(category)
-        except (ValueError, TypeError):
-            continue
 
     results = get_searcher().search_incremental(query, returned_ids=returned_ids, filters=filters, top_k=1)
     if not results:
