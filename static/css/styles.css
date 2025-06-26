@@ -85,7 +85,6 @@ h2 {
     flex-wrap: wrap;
     gap: 20px;
     justify-content: center;
-    max-width: 1200px;
     margin: auto;
 }
 
@@ -96,12 +95,13 @@ h2 {
     transition: transform 0.2s ease;
 }
 
+.preview-container-home,
 .preview-container {
     position: relative;
-    /* 1920 / 384 = 5 */
-    width: 384px;
-    /* 1080 / 216 = 5 */
-    height: 216px;
+    /* 1920/6 */
+    width: 320px;
+    /* 1080/6 */
+    height: 180px;
     overflow: hidden;
     border: 1px solid #ccc;
 }

@@ -23,7 +23,7 @@ from VideoSearch import views
 urlpatterns = [
     path('', views.home_view, name='home'),
     path("api/search/", views.api_search_view, name="api_search"),
-    path('detailed_view/<int:keyframeID>/', views.detailed_view, name='detailed_view'), #TODO: Change the id for keyframe id
+    path('detailed_view/<int:keyframe_id>/', views.detailed_view, name='detailed_view'),
     path('admin/', admin.site.urls)
 ]
 
