@@ -17,6 +17,7 @@ class Searcher:
 
         self.last_query = None
         self.last_embedding = None
+        self.last_query_objects = None
         self.remaining_keyframes = []
         self.remaining_size = -1
 
@@ -59,14 +60,43 @@ class Searcher:
         return []
 
     def compute_total_similarity(self, query_embedding, candidate_kf, filters):
-        distances = []
-
         candidate_features = candidate_kf.get_features_from_keyframe()
 
-        emb = candidate_features["clip_emb"]
-        emb /= np.linalg.norm(emb)
-        distances.append(np.dot(query_embedding, emb))
+        clip_score = self._compute_clip_similarity(query_embedding, candidate_features)
+        if clip_score is None:
+            return None
 
+        object_score = self._compute_object_similarity(candidate_features)
+        if object_score is None:
+            return None
+
+        filter_scores = self._compute_filter_distances(candidate_features, filters)
+
+        distances = [clip_score, object_score] + filter_scores
+        alpha = compute_adaptive_alpha(len(distances))
+        return nonlinear_pooling(distances, alpha)
+
+    def _compute_clip_similarity(self, query_embedding, candidate_features):
+        emb = candidate_features.get("clip_emb")
+        if emb is None:
+            return None
+        norm = np.linalg.norm(emb)
+        if norm == 0:
+            return None
+        emb /= norm
+        return np.dot(query_embedding, emb)
+
+    def _compute_object_similarity(self, candidate_features):
+        if self.last_query_objects is None:
+            return None
+        object_distance = ufil.soft_object_distance(candidate_features, self.last_query_objects)
+        confs = self.last_query_objects.get("objects", {})
+        avg_conf = np.mean(list(confs.values())) if confs else 0.0
+        weight = 0.2 + 0.8 * avg_conf
+        return object_distance * weight
+
+    def _compute_filter_distances(self, candidate_features, filters):
+        distances = []
         for kf, categories in filters.items():
             print(kf, categories)
             filter_keyframe = Keyframe.objects.get(id=kf)
@@ -76,10 +106,12 @@ class Searcher:
                     result = ufil.filter_embedding(candidate_features, filter_features)
                 elif category == "colors":
                     result = ufil.filter_colors(candidate_features, filter_features)
+                elif category == "objects":
+                    result = ufil.filter_objects(candidate_features, filter_features)
+                else:
+                    continue
                 distances.append(result)
-
-        alpha = compute_adaptive_alpha(len(distances))
-        return nonlinear_pooling(distances, alpha)
+        return distances
 
     def encode_text(self, text: str) -> np.ndarray:
         if text == self.last_query and self.last_embedding is not None:
@@ -93,6 +125,12 @@ class Searcher:
 
         self.last_query = text
         self.last_embedding = features
+
+        query_objects = {
+            "objects": ufil.find_fuzzy_object_matches(text, threshold=0.1, max_matches=50)
+        }
+        self.last_query_objects = query_objects
+
         return features
 
     def remove_similar_keyframes(self, keyframe, match_index, threshold = 0.05):
