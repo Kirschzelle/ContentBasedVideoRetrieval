@@ -8,6 +8,7 @@ from collections import defaultdict
 import sys
 import os
 
+_searcher_instance = None
 
 def get_searcher():
     global _searcher_instance
