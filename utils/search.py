@@ -1,3 +1,4 @@
+from asyncio.windows_events import INFINITE
 import time
 import torch
 import numpy as np
@@ -19,7 +20,6 @@ class Searcher:
         self.last_embedding = None
         self.last_query_objects = None
         self.remaining_keyframes = []
-        self.remaining_size = -1
 
     def search_incremental(self, query: str, returned_ids=None, filters=None, top_k=1):
         if returned_ids is None:
@@ -29,26 +29,24 @@ class Searcher:
 
         query_embedding = self.encode_text(query)
 
-        if self.remaining_size != len(returned_ids):
-            self.remaining_size = 0
+        if 0 == len(returned_ids):
             self.remaining_keyframes = list(
                 Keyframe.objects.select_related("clip", "clip__video").all()
             )
 
         best_match = None
-        best_similarity = -1.0
+        best_similarity = 1.0
 
         for idx, kf in enumerate(self.remaining_keyframes):
             score = self.compute_total_similarity(query_embedding, kf, filters)
             if score is None:
                 continue
-            if score > best_similarity:
+            if score < best_similarity:
                 best_similarity = score
                 best_match = kf
                 match_index = idx
 
         if best_match:
-            self.remaining_size += 1
             filter_count = sum(len(v) for v in filters.values())
             base_threshold = 0.45
             reduction_per_filter = 0.1
@@ -66,13 +64,14 @@ class Searcher:
         if clip_score is None:
             return None
 
-        object_score = self._compute_object_similarity(candidate_features)
-        if object_score is None:
-            return None
+        #object_score = self._compute_object_similarity(candidate_features)
+        #if object_score is None:
+        #    return None
 
         filter_scores = self._compute_filter_distances(candidate_features, filters)
 
-        distances = [clip_score, object_score] + filter_scores
+        #distances = [clip_score, object_score] + filter_scores
+        distances = [clip_score] + filter_scores
         alpha = compute_adaptive_alpha(len(distances))
         return nonlinear_pooling(distances, alpha)
 
@@ -84,7 +83,7 @@ class Searcher:
         if norm == 0:
             return None
         emb /= norm
-        return np.dot(query_embedding, emb)
+        return 1 - np.dot(query_embedding, emb)
 
     def _compute_object_similarity(self, candidate_features):
         if self.last_query_objects is None:
@@ -147,5 +146,5 @@ class Searcher:
         for idx in reversed(to_remove):
             del self.remaining_keyframes[idx]
 
-def compute_adaptive_alpha(num_values: int, base_alpha: float = 0.5, max_alpha: float = 7.0, ramp : float = 1.5):
+def compute_adaptive_alpha(num_values: int, base_alpha: float = 5, max_alpha: float = 5.0, ramp : float = 1.3):
     return min(max_alpha, base_alpha + np.log1p(num_values - 1) * ramp)
