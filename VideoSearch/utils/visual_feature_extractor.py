@@ -81,6 +81,9 @@ class VisualFeatureExtractor:
         best_frame = None
         best_score = float("inf")
 
+        if len(candidates) == 1:
+            return candidates[0]
+
         for i, (frame_i, feat_i) in enumerate(candidates):
             distances = []
 
