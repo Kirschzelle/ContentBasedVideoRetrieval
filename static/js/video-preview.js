@@ -12,16 +12,17 @@ document.addEventListener("DOMContentLoaded", () => {
         const knob = container.querySelector(".progress-knob");
         const timeLeftDisplay = container.querySelector(".time-left");
 
-        const startFrame = parseInt(container.dataset.startFrame);
-        const endFrame = parseInt(container.dataset.endFrame);
+        const startFrame = parseInt(container.dataset.clipStartFrame);
+        const endFrame = parseInt(container.dataset.clipEndFrame);
         const fps = parseFloat(container.dataset.fps);
         const startSeconds = startFrame / fps;
         const endSeconds = endFrame / fps;
-        const START_TIME = parseFloat(container.dataset.startTime)
+        const keyframeStartFrame = parseFloat(container.dataset.startFrame);
+        const keyframeStartTime = (startFrame + keyframeStartFrame) / fps;
 
         const startMillisecondsDiv = document.getElementById("startMilliseconds");
         const endMillisecondsDiv = document.getElementById("endMilliseconds");
-        updateDetailedViewInformation(START_TIME * 1000);
+        updateDetailedViewInformation(Math.round(keyframeStartTime * 1000));
 
         function updateDetailedViewInformation(startTime) {
             if (startMillisecondsDiv && endMillisecondsDiv) {
@@ -60,7 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         sharedVideo.addEventListener("loadedmetadata", () => {
             if (activeContainer === container) {
-                sharedVideo.currentTime = START_TIME;
+                sharedVideo.currentTime = keyframeStartTime;
             }
         });
 
@@ -97,7 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
             sharedVideo.style.opacity = "1";
 
             sharedVideo.pause();
-            sharedVideo.currentTime = START_TIME;
+            sharedVideo.currentTime = keyframeStartTime;;
 
             const onSeeked = () => {
                 sharedVideo.play().catch(() => { });
@@ -110,7 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
         container.addEventListener("mouseleave", () => {
             if (activeContainer === container) {
                 sharedVideo.pause();
-                sharedVideo.currentTime = START_TIME;
+                sharedVideo.currentTime = keyframeStartTime;;
                 document.getElementById("video-pool").appendChild(sharedVideo);
                 container.querySelector(".thumbnail").style.opacity = "1";
                 activeVideo = null;
