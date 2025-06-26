@@ -6,11 +6,11 @@ from pathlib import Path
 import numpy as np
 
 DEFAULT_CLIP_EXTRACTION_SETTINGS = {
-    "threshold_low": 0.5,
+    "threshold_low": 0.45,
     "threshold_high": 0.99,
     "order_low": 1,
-    "max_pass_seconds": 1.0,
-    "passes": 10,
+    "max_pass_seconds": 0.3,
+    "passes": 20,
 }
 
 class Command(BaseCommand):

@@ -1,9 +1,9 @@
 import numpy as np
 import cv2
 from PIL import Image
-from sklearn.cluster import KMeans
 from scipy.spatial import distance
 from VideoSearch.models import Keyframe
+from typing import List
 
 max_palette_dist = np.sqrt(15 * 255**2)
 
@@ -22,17 +22,20 @@ class ColorFeatureExtractor:
         return cv2.normalize(hist, hist).flatten()
 
     def extract_dominant_colors(self, image: Image.Image, k=5) -> np.ndarray:
-        img = np.array(image.convert("RGB"))
-        pixels = img.reshape(-1, 3)
+        resized_image  = image.resize((128, 128), Image.BILINEAR)
+        img = np.array(resized_image .convert("RGB"))  
+        pixels = img.reshape((-1, 3)).astype(np.float32)
 
-        unique_pixels = np.unique(pixels, axis=0)
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+        _, _, centers = cv2.kmeans(
+            pixels,
+            k,
+            None,
+            criteria,
+            3,
+            cv2.KMEANS_RANDOM_CENTERS
+        )
 
-        if unique_pixels.shape[0] < k:
-            mean_color = np.mean(unique_pixels, axis=0)
-            return np.tile(mean_color, (k, 1)).flatten()
-
-        kmeans = KMeans(n_clusters=k, n_init="auto").fit(pixels)
-        centers = kmeans.cluster_centers_
         sorted_centers = centers[np.argsort(np.mean(centers, axis=1))]
         return sorted_centers.flatten()
 
@@ -43,30 +46,25 @@ class ColorFeatureExtractor:
         return np.sqrt(np.std(rg) ** 2 + np.std(yb) ** 2) + 0.3 * np.sqrt(np.mean(rg) ** 2 + np.mean(yb) ** 2)
 
     def extract_all(self, image: Image.Image) -> dict:
-        result = {
-            "histogram": self.extract_hsv_histogram(image),
-        }
+        result = {}
+        result["histogram"] = self.extract_hsv_histogram(image)
+
         if self.use_palette:
             result["palette"] = self.extract_dominant_colors(image)
+
         if self.use_colorfulness:
             result["colorfulness"] = self.calculate_colorfulness(image)
+
         return result
 
-    def distance_to_existing_keyframes(self, clip, query_feat: dict, weights=None):
-        keyframes = Keyframe.objects.filter(clip=clip)
-        if not keyframes.exists():
-            return 1.0, 1.0
+    def extract_all_batch(self, images: List[Image.Image]) -> List[dict]:
+        results = []
 
-        feature_list = []
-        for kf in keyframes:
-            features = {
-                "histogram": kf.load_histogram_hsv(),
-                "palette": kf.load_dominant_colors(),
-                "colorfulness": kf.colorfulness
-            }
-            feature_list.append(features)
+        for image in images:
+            result = self.extract_all(image)
+            results.append(result)
 
-        return self.distance_to_feature_set(query_feat, feature_list, weights)
+        return results
     
     def _log(self, msg, level="info"):
         if self.command:
@@ -74,7 +72,23 @@ class ColorFeatureExtractor:
         else:
             print(msg)
 
-def distance_to_feature_set(self, query_feat: dict, feature_list: list[dict], weights=None):
+def distance_to_existing_keyframes(clip, query_feat: dict, weights=None):
+    keyframes = Keyframe.objects.filter(clip=clip)
+    if not keyframes.exists():
+        return 1.0, 1.0
+
+    feature_list = []
+    for kf in keyframes:
+        features = {
+            "histogram": kf.load_histogram_hsv(),
+            "palette": kf.load_dominant_colors(),
+            "colorfulness": kf.colorfulness
+        }
+        feature_list.append(features)
+
+    return distance_to_feature_set(query_feat, feature_list, weights)
+
+def distance_to_feature_set(query_feat: dict, feature_list: list[dict], weights=None):
     distances = [compute_distance(query_feat, f, weights) for f in feature_list]
     return min(distances), max(distances)
 

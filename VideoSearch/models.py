@@ -104,6 +104,23 @@ class Video(models.Model):
             else:
                 return [cv2.cvtColor(cv2.imread(str(p)), cv2.COLOR_BGR2RGB) for p in images]
 
+    def get_selected_frame_images(self, frame_numbers: list[int], as_pil=True):
+        images = {}
+        cap = cv2.VideoCapture(str(self.file_path))
+
+        for frame_index in sorted(set(frame_numbers)):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+            success, frame = cap.read()
+            if success and frame is not None:
+                images[frame_index] = (
+                    Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                    if as_pil else frame
+                )
+
+        cap.release()
+
+        return [images.get(f) for f in frame_numbers]
+
     def media_url(self):
         rel_path = os.path.relpath(self.file_path, settings.MEDIA_ROOT)
         return f"{settings.MEDIA_URL}{rel_path.replace(os.sep, '/')}"
@@ -153,6 +170,16 @@ class Clip(models.Model):
         absolute_end = self.start_frame + end
 
         return self.video.get_frame_range_images(absolute_start, absolute_end, as_pil=as_pil)
+
+    def get_selected_frame_images(self, relative_indices: list[int], as_pil: bool = True):
+        """
+        Loads only specific frame indices (relative to this clip).
+        """
+        absolute_indices = [
+            self.start_frame + i for i in relative_indices
+            if self.start_frame + i <= self.end_frame
+        ]
+        return self.video.get_selected_frame_images(absolute_indices, as_pil=as_pil)
 
     def __str__(self):
         return f"Clip {self.id}: Video {self.video} ({self.start_frame}f to {self.end_frame}f)"
