@@ -13,8 +13,7 @@ _searcher_instance = None
 def get_searcher():
     global _searcher_instance
 
-    if _searcher_instance is None:
-        if (
+    if _searcher_instance is None and (
             "runserver" in sys.argv or
             "runserver_plus" in sys.argv
         ) and os.environ.get("RUN_MAIN") == "true":
@@ -64,22 +63,22 @@ def api_search_view(request):
         return JsonResponse({"error": "Image path is not within MEDIA_ROOT"}, status=500)
 
     image_url = settings.MEDIA_URL.rstrip("/") + "/" + str(relative_path).replace("\\", "/")
-    video_url = kf.clip.video.media_url()
-
+    
     return JsonResponse({
         "keyframe_id": kf.id,
-        "clip_id": kf.clip.id,
-        "video_url": video_url,
-        "video_id": kf.clip.video.id,
         "frame": kf.frame,
-        "start_frame": kf.clip.start_frame,
-        "end_frame": kf.clip.end_frame,
-        "thumbnail": image_url,
+        "clip_id": kf.clip.id,
+        "clip_start_frame": kf.clip.start_frame,
+        "clip_end_frame": kf.clip.end_frame,
+        "video_id": kf.clip.video.id,
+        "media_url": kf.clip.video.media_url(),
+        "fps": kf.clip.video.fps(),
+        "thumbnail": image_url
     })
 
-def detailed_view(request, keyframeID):
+def detailed_view(request, keyframe_id):
     query = request.GET.get('q', '')
-    keyframe = Keyframe.objects.filter(id=keyframeID).first()
+    keyframe = get_object_or_404(Keyframe, id=keyframe_id)
     image_path = keyframe.get_image_path().resolve()
     media_root = Path(settings.MEDIA_ROOT).resolve()
 
@@ -90,10 +89,8 @@ def detailed_view(request, keyframeID):
 
     image_url = settings.MEDIA_URL.rstrip("/") + "/" + str(relative_path).replace("\\", "/")
     context = {
-        "clip": keyframe.clip,
-        "query": query,
-        "media": keyframe.clip.video.media_url(),
-        "start": (keyframe.clip.start_frame + keyframe.frame) / keyframe.clip.fps(),
-        "keyframe_img": image_url
+        "keyframe": keyframe,
+        "keyframe_img": image_url,
+        "query": query
     }
     return render(request, "detailed_view.html", context)

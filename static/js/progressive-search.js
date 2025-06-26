@@ -43,11 +43,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const div = document.createElement("div");
             div.className = "clip-card preview-container video-preview";
-            div.setAttribute("data-video-id", data.video_id);
-            div.setAttribute("data-start-frame", data.start_frame);
-            div.setAttribute("data-keyframe-frame", data.frame); 
-            div.setAttribute("data-end-frame", data.end_frame);
-            div.setAttribute("data-fps", "25");
+            div.setAttribute("data-video-id", data.media_url);
+            div.setAttribute("data-start-frame", data.frame);
+            div.setAttribute("data-clip-start-frame", data.clip_start_frame);
+            div.setAttribute("data-clip-end-frame", data.clip_end_frame);
+            div.setAttribute("data-fps", data.fps);
             div.innerHTML = `
         <a href="/detailed_view/${data.keyframe_id}?q=${encodeURIComponent(query)}">
           <img src="${data.thumbnail}" alt="Keyframe" class="thumbnail draggable-image" draggable="true" />
@@ -88,14 +88,14 @@ function initVideoPreviewsForElement(container, data) {
     container.dataset.initialized = "true";
 
     let isDragging = false;
-    let sharedVideo = document.getElementById(data.video_id);
+    let sharedVideo = document.getElementById(data.media_url);
     if (!sharedVideo) {
         sharedVideo = document.createElement("video");
-        sharedVideo.id = data.video_id;
+        sharedVideo.id = data.keyframe_id;
         sharedVideo.muted = true;
         sharedVideo.playsInline = true;
         sharedVideo.preload = "auto";
-        sharedVideo.src = data.video_url;
+        sharedVideo.src = data.media_url;
         document.getElementById("video-pool").appendChild(sharedVideo);
     }
     const hitArea = container.querySelector('.hit-area');
@@ -103,21 +103,22 @@ function initVideoPreviewsForElement(container, data) {
     const knob = container.querySelector(".progress-knob");
     const timeLeftDisplay = container.querySelector(".time-left");
 
-    const startFrame = parseInt(container.dataset.startFrame);
-    const endFrame = parseInt(container.dataset.endFrame);
+    const startFrame = parseInt(container.dataset.clipStartFrame);
+    const endFrame = parseInt(container.dataset.clipEndFrame);
     const fps = parseFloat(container.dataset.fps);
     const startSeconds = startFrame / fps;
     const endSeconds = endFrame / fps;
-    const START_TIME = startSeconds + (container.dataset.keyframeFrame / fps);
+    const keyframeStartFrame = parseFloat(container.dataset.startFrame);
+    const keyframeStartTime = (startFrame + keyframeStartFrame) / fps;
 
     const startMillisecondsDiv = document.getElementById("startMilliseconds");
     const endMillisecondsDiv = document.getElementById("endMilliseconds");
-    updateDetailedViewInformation(Math.round(startSeconds * 1000));
+    updateDetailedViewInformation(Math.round(keyframeStartTime * 1000));
 
     function updateDetailedViewInformation(startTime) {
         if (startMillisecondsDiv && endMillisecondsDiv) {
             startMillisecondsDiv.textContent = startTime;
-            endMillisecondsDiv.textContent = Math.round(endSeconds * 1000);
+            endMillisecondsDiv.textContent = Math.round((endFrame / fps) * 1000);
         }
     }
 
@@ -151,7 +152,7 @@ function initVideoPreviewsForElement(container, data) {
 
     sharedVideo.addEventListener("loadedmetadata", () => {
         if (activeContainer === container) {
-            sharedVideo.currentTime = START_TIME;
+            sharedVideo.currentTime = keyframeStartTime;
         }
     });
 
@@ -188,7 +189,7 @@ function initVideoPreviewsForElement(container, data) {
         sharedVideo.style.opacity = "1";
 
         sharedVideo.pause();
-        sharedVideo.currentTime = START_TIME;
+        sharedVideo.currentTime = keyframeStartTime;
 
         const onSeeked = () => {
             sharedVideo.play().catch(() => { });
@@ -201,7 +202,7 @@ function initVideoPreviewsForElement(container, data) {
     container.addEventListener("mouseleave", () => {
         if (activeContainer === container) {
             sharedVideo.pause();
-            sharedVideo.currentTime = START_TIME;
+            sharedVideo.currentTime = keyframeStartTime;
             document.getElementById("video-pool").appendChild(sharedVideo);
             container.querySelector(".thumbnail").style.opacity = "1";
             activeVideo = null;
