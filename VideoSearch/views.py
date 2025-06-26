@@ -44,9 +44,10 @@ def api_search_view(request):
 
     for pair in filters_raw:
         try:
-            kf_id, value = map(int, pair.split(":"))
-            filters[kf_id].append(value)
-        except ValueError:
+            kf_id_str, category = pair.split(":")
+            kf_id = int(kf_id_str)
+            filters[kf_id].append(category)
+        except (ValueError, TypeError):
             continue
 
     results = get_searcher().search_incremental(query, returned_ids=returned_ids, filters=filters, top_k=1)

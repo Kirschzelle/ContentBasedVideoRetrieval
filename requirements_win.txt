@@ -17,3 +17,5 @@ pynvml
 opencv-python
 scikit-learn >= 1.4
 psycopg2-binary
+ultralytics
+difflib
