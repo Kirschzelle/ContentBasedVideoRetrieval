@@ -1,5 +1,20 @@
 document.addEventListener("DOMContentLoaded", function () {
     const params = new URLSearchParams(window.location.search);
+    const filterTypes = ["colors", "embeddings", "objects"];
+
+    for (const type of filterTypes) {
+        const previewSrc = localStorage.getItem(`filterPreview_${type}`);
+        const hasFilter = [...params.keys()].some(k => k.startsWith("filters[") && k.includes(`:${type}`));
+        const container = document.getElementById(`${type.slice(0, -1)}-filter`);
+        const imgPreview = container?.querySelector("img.preview-image");
+
+        if (previewSrc && hasFilter && imgPreview) {
+            imgPreview.src = previewSrc;
+            imgPreview.style.display = "block";
+        } else {
+            localStorage.removeItem(`filterPreview_${type}`);
+        }
+    }
     const query = params.get("q");
     const entries = Array.from(params.entries());
 

@@ -10,18 +10,34 @@ document.getElementById("progressive-results").addEventListener("dragstart", (e)
 });
 
 document.querySelectorAll(".drag-drop-area").forEach(area => {
-    const imgPreview = area.querySelector("img");
-
     area.addEventListener("click", () => {
+        const imgPreview = area.querySelector("img.preview-image");
         if (imgPreview) {
             imgPreview.src = "";
             imgPreview.style.display = "none";
         }
+
+        const filterType = area.id.replace("-filter", ""); // e.g., "color", "embedding", "object"
+        const storageKey = `filterPreview_${filterType}`;
+        localStorage.removeItem(storageKey);
+
+        const params = new URLSearchParams(window.location.search);
+        let changed = false;
+        for (const key of [...params.keys()]) {
+            if (key.startsWith("filters[") && key.includes(`:${filterType}`)) {
+                params.delete(key);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            const baseUrl = window.location.origin + window.location.pathname;
+            const queryString = params.toString();
+            window.location.href = queryString.length > 0 ? `${baseUrl}?${queryString}` : baseUrl;
+        }
     });
 
-    area.addEventListener("dragover", e => {
-        e.preventDefault();
-    });
+    area.addEventListener("dragover", e => e.preventDefault());
 
     area.addEventListener("drop", e => {
         e.preventDefault();
@@ -29,29 +45,52 @@ document.querySelectorAll(".drag-drop-area").forEach(area => {
         try {
             const data = JSON.parse(e.dataTransfer.getData("text/plain"));
             const keyframeId = data.keyframeId;
-            const baseUrl = window.location.origin + window.location.pathname;
+            const imgPreview = area.querySelector("img.preview-image");
+            const filterMap = {
+                color: "colors",
+                embedding: "embeddings",
+                object: "objects"
+            };
+
+            const rawType = area.id.replace("-filter", "");
+            const filterType = filterMap[rawType];
+            const filterKey = `filters[${keyframeId}:${filterType}]`;
+            const storageKey = `filterPreview_${filterType}`;
+
+            if (imgPreview && data.src) {
+                imgPreview.src = data.src;
+                imgPreview.style.display = "block";
+            }
+
+            localStorage.setItem(storageKey, data.src);
 
             const params = new URLSearchParams(window.location.search);
-
             [...params.keys()].forEach(key => {
-                if (key.startsWith('filters[')) {
+                if (key.startsWith('filters[') && key.includes(`:${filterType}`)) {
                     params.delete(key);
                 }
             });
 
-            const filterParam = `filters[${keyframeId}:colors]`;
-
-            let queryString = params.toString();
-            if (queryString.length > 0) {
-                queryString += `&${filterParam}`;
-            } else {
-                queryString = filterParam;
+            for (const key of [...params.keys()]) {
+                if (key.startsWith("filters[") && key.includes(`:${filterType}`)) {
+                    params.delete(key);
+                }
             }
+
+            const queryParts = [];
+
+            for (const [key, value] of params.entries()) {
+                queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+            }
+
+            queryParts.push(`${filterKey}=`);
+
+            const baseUrl = window.location.origin + window.location.pathname;
+            const queryString = queryParts.join("&");
 
             window.location.href = `${baseUrl}?${queryString}`;
         } catch (err) {
             console.error("Failed to parse drag data:", err);
         }
-
     });
 });

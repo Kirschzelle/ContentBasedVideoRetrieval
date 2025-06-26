@@ -239,3 +239,15 @@ h2 {
     font-weight: bold;
     font-size: 1.1em;
 }
+
+.drag-drop-area {
+    border: 2px dashed #aaa;
+    padding: 10px;
+    text-align: center;
+    min-height: 120px;
+}
+
+    .drag-drop-area img.preview-image {
+        margin-top: 10px;
+        max-height: 100px;
+    }
