@@ -15,7 +15,7 @@ def filter_objects(canidate_features, filter_features):
 
 def find_fuzzy_object_matches(query: str, threshold=0.75, max_matches=5) -> dict:
     """
-    Returns a dict mapping matched YOLO class names to similarity scores (0–1).
+    Returns a dict mapping matched YOLO class names to similarity scores (0ï¿½1).
     """
     words = query.lower().split()
     matched = {}
