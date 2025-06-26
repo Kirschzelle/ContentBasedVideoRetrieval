@@ -42,7 +42,7 @@ document.addEventListener("DOMContentLoaded", function () {
             div.className = "clip-card preview-container-home";
             div.innerHTML = `
             <a href="/detailed_view/${data.keyframe_id}?q=${encodeURIComponent(query)}" draggable="false">
-                <img src="${data.thumbnail}" alt="Keyframe" class="thumbnail draggable-image" draggable="true" />
+                <img src="${data.thumbnail}" alt="Keyframe" data-keyframe-id="${data.keyframe_id}" class="thumbnail draggable-image" draggable="true" />
             </a>
             `;
 

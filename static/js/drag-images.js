@@ -1,14 +1,18 @@
-document.querySelectorAll(".draggable-image").forEach(img => {
-    img.addEventListener("dragstart", e => {
-        e.dataTransfer.setData("text/plain", e.target.src);
-    });
+document.getElementById("progressive-results").addEventListener("dragstart", (e) => {
+    const img = e.target;
+    if (img.classList.contains("draggable-image")) {
+        const payload = {
+            src: img.src,
+            keyframeId: img.dataset.keyframeId,
+        };
+        e.dataTransfer.setData("text/plain", JSON.stringify(payload));
+    }
 });
 
 document.querySelectorAll(".drag-drop-area").forEach(area => {
     const imgPreview = area.querySelector("img");
 
     area.addEventListener("click", () => {
-        const imgPreview = area.querySelector("img");
         if (imgPreview) {
             imgPreview.src = "";
             imgPreview.style.display = "none";
@@ -22,16 +26,13 @@ document.querySelectorAll(".drag-drop-area").forEach(area => {
     area.addEventListener("drop", e => {
         e.preventDefault();
 
-        const imgSrc = e.dataTransfer.getData("text/plain");
-        imgPreview.src = imgSrc;
-        imgPreview.style.display = "block";
-
-        const params = new URLSearchParams(window.location.search);
-        params.set("cfilter", encodeURIComponent(imgSrc));
-        window.location.search = params.toString();
-
-        const tempImg = new Image();
-        tempImg.crossOrigin = "anonymous";
-        tempImg.src = imgSrc;
+        try {
+            const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+            const params = new URLSearchParams(window.location.search);
+            params.set("cfilter", encodeURIComponent(parseInt(data.keyframeId)));
+            window.location.search = params.toString();
+        } catch (err) {
+            console.error("Failed to parse drag data:", err);
+        }
     });
 });
