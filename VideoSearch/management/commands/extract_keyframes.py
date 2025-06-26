@@ -2,6 +2,8 @@ from VideoSearch.management.base import StyledCommand as BaseCommand
 from VideoSearch.management.commands.extract_clips import multipass_predictions_to_scenes
 from multiprocessing import Pool
 
+feature_extractor = None
+
 class Command(BaseCommand):
     help = "Extract keyframes from newly extracted clips."
 
@@ -32,10 +34,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style_info(f"Extracting keyframes for {len(args_list)} clips using {workers} worker(s)."))
 
         if workers == 1:
+            init_worker()
             for args in args_list:
                 process_clip_entry_worker(*args)
         else:
-            with Pool(processes=workers) as pool:
+            with Pool(processes=workers, initializer=init_worker) as pool:
                 pool.starmap(process_clip_entry_worker, args_list)
 
 def process_clip_entry(entry, feature_extractor, threshold, search_range_factor, frames_to_compare, command=None):
@@ -44,6 +47,8 @@ def process_clip_entry(entry, feature_extractor, threshold, search_range_factor,
     clip = entry.clip
     if command:
         command.stdout.write(command.style_info(f"Processing clip {clip.id} (Video {clip.video.id}, frames {clip.start_frame}-{clip.end_frame})"))
+    else:
+        print(f"[KeyframeExtraction] Processing clip {clip.id} (Video {clip.video.id}, frames {clip.start_frame}-{clip.end_frame})")
 
     Keyframe.objects.filter(clip=clip).delete()
 
@@ -51,6 +56,8 @@ def process_clip_entry(entry, feature_extractor, threshold, search_range_factor,
     change_regions = multipass_predictions_to_scenes(probs, 0.01, 1, 3, 1, 25, clip.fps())
     if command:
         command.stdout.write(command.style_info(f"Detected {len(change_regions)} change regions."))
+    else:
+        print(f"[KeyframeExtraction] Detected {len(change_regions)} change regions.")
 
     for start, end in change_regions:
         potential_keyframe = int((start + end) / 2)
@@ -67,20 +74,27 @@ def process_clip_entry(entry, feature_extractor, threshold, search_range_factor,
 
     if command:
         command.stdout.write(command.style_success(f"Extracted {Keyframe.objects.filter(clip=clip).count()} keyframes."))
+    else:
+        print(f"[KeyframeExtraction] Extracted {Keyframe.objects.filter(clip=clip).count()} keyframes.")
 
     entry.delete()
 
-def process_clip_entry_worker(entry_id, threshold, search_range_factor, frames_to_compare):
+def init_worker():
+    """Initialize model only once per worker process."""
     import os
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ContentBasedVideoRetrieval.settings")
     import django
     django.setup()
 
-    from VideoSearch.models import ClipPredictionCache
+    global feature_extractor
     from VideoSearch.utils.visual_feature_extractor import VisualFeatureExtractor
-
-    entry = ClipPredictionCache.objects.select_related("clip", "clip__video").get(id=entry_id)
     feature_extractor = VisualFeatureExtractor(command=None)
+
+def process_clip_entry_worker(entry_id, threshold, search_range_factor, frames_to_compare):
+    from VideoSearch.models import ClipPredictionCache
+
+    global feature_extractor
+    entry = ClipPredictionCache.objects.select_related("clip", "clip__video").get(id=entry_id)
 
     process_clip_entry(
         entry,
@@ -114,6 +128,8 @@ def try_for_potential_keyframe(
     if not images:
         if feature_extractor.command:
             feature_extractor.command.stdout.write(feature_extractor.command.style_warning(f"No images found in range {start}-{end} for clip {clip.id}"))
+        else:
+            print(f"[KeyframeExtraction] No images found in range {start}-{end} for clip {clip.id}")
         return
 
     candidates = feature_extractor.get_candidates(images, start, step_size, clip, threshold)
