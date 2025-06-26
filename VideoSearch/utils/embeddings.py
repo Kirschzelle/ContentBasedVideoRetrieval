@@ -7,6 +7,7 @@ from VideoSearch.utils.hardware import EmbeddingModelSelector
 from VideoSearch.models import Keyframe
 import numpy as np
 from scipy.spatial.distance import cosine
+from typing import List
 
 class ImageEmbedder:
     def __init__(self, device=None, command=None):
@@ -72,6 +73,30 @@ class ImageEmbedder:
             features["dino_emb"] = None
 
         return features
+
+    def get_combined_embedding_batch(self, images: List[Image.Image]) -> List[dict]:
+        features_list = []
+
+        clip_inputs = self.clip_processor(images=images, return_tensors="pt", padding=True).to(self.device)
+        with torch.no_grad():
+            clip_embs = self.clip_model.get_image_features(**clip_inputs)
+            clip_embs = clip_embs / clip_embs.norm(dim=-1, keepdim=True)
+            clip_embs = clip_embs.detach().cpu().numpy()
+
+        if self.mode != "clip-only":
+            dino_tensors = torch.stack([self.dino_transform(img) for img in images]).to(self.device)
+            with torch.no_grad():
+                dino_embs = self.dino_model(dino_tensors)
+                dino_embs = dino_embs / dino_embs.norm(dim=-1, keepdim=True)
+                dino_embs = dino_embs.detach().cpu().numpy()
+
+        for i in range(len(images)):
+            features_list.append({
+                "clip_emb": clip_embs[i],
+                "dino_emb": dino_embs[i] if self.mode != "clip-only" else None
+            })
+
+        return features_list
 
     def get_combined_distance_to_set(self, query: dict, feature_set: list[dict]):
         """

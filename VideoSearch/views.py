@@ -5,13 +5,19 @@ from pathlib import Path
 from .models import Keyframe
 from utils.search import Searcher
 from collections import defaultdict
+import sys
+import os
 
-_searcher_instance = None
 
 def get_searcher():
     global _searcher_instance
+
     if _searcher_instance is None:
-        _searcher_instance = Searcher()
+        if (
+            "runserver" in sys.argv or
+            "runserver_plus" in sys.argv
+        ) and os.environ.get("RUN_MAIN") == "true":
+            _searcher_instance = Searcher()
     return _searcher_instance
 
 # Create your views here.
