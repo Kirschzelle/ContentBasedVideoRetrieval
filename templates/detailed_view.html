@@ -7,15 +7,18 @@
         <i class="fas fa-arrow-circle-left"></i>
     </a>
     <div class="keyframe-information">
-        <p>Video-ID: <span id="mediaItemName">{{ clip.video.file_name }}</span></p>
+        <p>Video-ID: <span id="mediaItemName">{{ keyframe.clip.video.file_name }}</span></p>
         <p>Start time in milliseconds: <span id="startMilliseconds"></span></p>
         <p>End time in milliseconds: <span id="endMilliseconds"></span></p>
-        <button id="reset" type="submit" class="reset-button"  data-start-frame="{{ clip.start_frame }}" data-fps="{{ clip.video.fps }}">Reset Starttime</button>
+        <button id="reset" type="submit" class="reset-button"  data-start-frame="{{ keyframe.frame }}" data-clip-start-frame="{{ keyframe.clip.start_frame }}" data-fps="{{ keyframe.clip.video.fps }}">Reset Starttime</button>
     </div>
     <section class="keyframe">
         <h4>Your Keyframe:</h4>
-        <div class="clip-card preview-container video-preview" data-video-id="{{ clip.video.id }}" data-start-time="{{ start }}" data-start-frame="{{ clip.start_frame }}" data-end-frame="{{ clip.end_frame }}" data-fps="{{ clip.video.fps }}">
-            <img src="{{ keyframe_img }}" alt="Clip" class="thumbnail">
+        <div class="clip-card preview-container video-preview" data-start-frame="{{ keyframe.frame }}" data-clip-start-frame="{{ keyframe.clip.start_frame }}" data-clip-end-frame="{{ keyframe.clip.end_frame }}" data-fps="{{ keyframe.clip.video.fps }}">
+            <img src="{{ keyframe_img }}" alt="Keyframe" class="thumbnail">
+            <video id="{{ keyframe.clip.video.id }}" alt="Video" class="preview-video" preload="auto" loop playsinline >
+                <source src="{{ keyframe.clip.video.media_url }}" type="video/mp4"/>
+            </video>
             <div class="video-overlay">
             <div class="progress-bar">
                 <div class="hit-area"></div>
@@ -25,13 +28,9 @@
             <span class="time-left">0:00</span>
             </div>
         </div>
-        <button id="submit" type="submit" class="submit-button" data-video-id="{{ clip.video.file_name }}">Submit to the DRES Server</button>
+        <button id="submit" type="submit" class="submit-button" data-video-id="{{ keyframe.clip.video.file_name }}">Submit to the DRES Server</button>
         <div id="submit-result-message" class="submit-result"></div>
     </section>
-</div>
-
-<div id="video-pool" style="display:none;">
-    <video id="{{ clip.video.id }}" muted playsinline preload="auto" src="{{ media }}"></video>
 </div>
 <script src="{% static 'js/video-preview.js' %}"></script>
 <script src="{% static 'js/dres-submit.js' %}"></script>
