@@ -13,7 +13,6 @@ class Command(BaseCommand):
         if not video_dir.exists():
             video_dir.mkdir(parents=True)
             self.stdout.write(self.style_warning(f"Directory '{video_dir}' did not exist, created it. Place videos into the folder and run the command again."))
-            return
 
         video_files = [f for f in video_dir.rglob('*') if is_valid_video(f)]
 
