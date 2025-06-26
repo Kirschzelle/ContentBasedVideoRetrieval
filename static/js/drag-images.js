@@ -28,11 +28,30 @@ document.querySelectorAll(".drag-drop-area").forEach(area => {
 
         try {
             const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+            const keyframeId = data.keyframeId;
+            const baseUrl = window.location.origin + window.location.pathname;
+
             const params = new URLSearchParams(window.location.search);
-            params.set("cfilter", encodeURIComponent(parseInt(data.keyframeId)));
-            window.location.search = params.toString();
+
+            [...params.keys()].forEach(key => {
+                if (key.startsWith('filters[')) {
+                    params.delete(key);
+                }
+            });
+
+            const filterParam = `filters[${keyframeId}:colors]`;
+
+            let queryString = params.toString();
+            if (queryString.length > 0) {
+                queryString += `&${filterParam}`;
+            } else {
+                queryString = filterParam;
+            }
+
+            window.location.href = `${baseUrl}?${queryString}`;
         } catch (err) {
             console.error("Failed to parse drag data:", err);
         }
+
     });
 });

@@ -68,7 +68,8 @@ class Searcher:
         distances.append(np.dot(query_embedding, emb))
 
         for kf, categories in filters.items():
-            filter_keyframe = Keyframe.objects.filter(id=kf)
+            print(kf, categories)
+            filter_keyframe = Keyframe.objects.get(id=kf)
             filter_features = filter_keyframe.get_features_from_keyframe()
             for category in categories:
                 if category == "embeddings":
