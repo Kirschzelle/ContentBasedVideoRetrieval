@@ -1,6 +1,7 @@
 import numpy as np
-from VideoSearch.utils.embeddings import ImageEmbedder, calculate_combined_distance as embedding_distance
-from VideoSearch.utils.color_features import ColorFeatureExtractor , compute_distance as color_distance
+from VideoSearch.utils.embeddings import ImageEmbedder, calculate_combined_distance as embedding_distance, get_distance_to_existing_keyframes as embedding_ex_keyframes_distance
+from VideoSearch.utils.color_features import ColorFeatureExtractor , compute_distance as color_distance, distance_to_existing_keyframes as color_ex_keyframes_distance
+import time
 
 class VisualFeatureExtractor:
     def __init__(self, use_embeddings=True, use_color=True, command=None):
@@ -23,22 +24,50 @@ class VisualFeatureExtractor:
 
         return features
 
+    def extract_features_batch(self, images):
+        """
+        Batched version of extract_features. Returns a list of feature dicts.
+        """
+        all_features = [{} for _ in images]
+
+        t0 = time.perf_counter()
+
+        if self.use_embeddings:
+            embeddings = self.embedder.get_combined_embedding_batch(images)
+            for i in range(len(images)):
+                all_features[i].update(embeddings[i])
+
+        t1 = time.perf_counter()
+
+        if self.use_color:
+            colors = self.color.extract_all_batch(images)
+            for i in range(len(images)):
+                all_features[i].update(colors[i])
+
+        t2 = time.perf_counter()
+
+        if self.command:
+            self.command.stdout.write(self.command.style_info(
+                f"Embedding batch: {(t1 - t0) * 1000:.1f}ms | Color batch: {(t2 - t1) * 1000:.1f}ms"
+            ))
+
+        return all_features
+
     def get_candidates(self, images, start, step_size, clip, threshold):
         """
         Returns a list of (frame_number, features_dict) tuples for frames
         that are sufficiently different from existing keyframes.
+        Uses batched feature extraction for performance.
         """
+        indices = [i for i in range(len(images)) if i == 0 or i % step_size == 0]
+        selected_images = [images[i] for i in indices]
+        selected_frame_numbers = [start + i for i in indices]
+
+        batched_features = self.extract_features_batch(selected_images)
+
         candidates = []
-
-        for i, image in enumerate(images):
-            if i != 0 and i % step_size != 0:
-                continue
-
-            frame_number = start + i
-            features = self.extract_features(image)
-
+        for frame_number, features in zip(selected_frame_numbers, batched_features):
             distance, _ = self.distance_to_existing_keyframes(clip, features)
-
             if distance >= threshold:
                 candidates.append((frame_number, features))
 
@@ -75,12 +104,12 @@ class VisualFeatureExtractor:
         max_distances = []
 
         if self.use_embeddings:
-            min_dist_emb, max_dist_emb = self.embedder.get_distance_to_existing_keyframes(clip, features)
+            min_dist_emb, max_dist_emb = embedding_ex_keyframes_distance(clip, features)
             min_distances.append(min_dist_emb)
             max_distances.append(max_dist_emb)
 
         if self.use_color:
-            min_dist_col, max_dist_col = self.color.distance_to_existing_keyframes(clip, features)
+            min_dist_col, max_dist_col = color_ex_keyframes_distance(clip, features)
             min_distances.append(min_dist_col)
             max_distances.append(max_dist_col)
 
@@ -93,7 +122,7 @@ class VisualFeatureExtractor:
         filtered = []
         for frame_number, features in candidates:
             if self.use_embeddings:
-                min_dist, _ = self.embedder.get_distance_to_existing_keyframes(
+                min_dist, _ = self.distance_to_existing_keyframes(
                     clip,
                     features
                 )
