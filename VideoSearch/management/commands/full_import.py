@@ -31,4 +31,8 @@ class Command(BaseCommand):
         }
         call_command("extract_keyframes", **keyframe_kwargs)
 
+        self.stdout.write(self.style_info("=== Extracting Objects ==="))
+
+        call_command("extract_objects", batch_size = 4)
+
         self.stdout.write(self.style_success("Full import completed."))
