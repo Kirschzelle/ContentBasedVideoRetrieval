@@ -89,7 +89,7 @@ class Searcher:
     def _compute_object_similarity(self, candidate_features):
         if self.last_query_objects is None:
             return None
-        object_distance = ufil.soft_object_distance(candidate_features, self.last_query_objects)
+        object_distance = ufil.filter_objects(candidate_features, self.last_query_objects)
         confs = self.last_query_objects.get("objects", {})
         avg_conf = np.mean(list(confs.values())) if confs else 0.0
         weight = 0.2 + 0.8 * avg_conf
@@ -98,7 +98,6 @@ class Searcher:
     def _compute_filter_distances(self, candidate_features, filters):
         distances = []
         for kf, categories in filters.items():
-            print(kf, categories)
             filter_keyframe = Keyframe.objects.get(id=kf)
             filter_features = filter_keyframe.get_features_from_keyframe()
             for category in categories:
