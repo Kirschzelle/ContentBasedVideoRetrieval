@@ -1,63 +1,99 @@
 from VideoSearch.management.base import StyledCommand as BaseCommand
-from VideoSearch.models import Video, Clip, ClipPredictionCache
-from third_party.transnetv2.inference.transnetv2 import TransNetV2
 from scipy.signal import argrelextrema
-from pathlib import Path
 import numpy as np
+from multiprocessing import Pool, cpu_count
+import multiprocessing
+from functools import partial
 
 DEFAULT_CLIP_EXTRACTION_SETTINGS = {
-    "threshold_low": 0.5,
+    "threshold_low": 0.45,
     "threshold_high": 0.99,
     "order_low": 1,
-    "max_pass_seconds": 1.0,
-    "passes": 10,
+    "max_pass_seconds": 0.3,
+    "passes": 20,
 }
 
 class Command(BaseCommand):
     help = "Extract clips from all videos and store them in the database.\nA clip is defined as a single Video sequence with no cuts within it."
 
     def add_arguments(self, parser):
+        parser.add_argument('--workers', type=int, default=4, help='Number of worker processes (1 disables multiprocessing).')
         for key, default in DEFAULT_CLIP_EXTRACTION_SETTINGS.items():
             arg_name = f"--{key.replace('_', '-')}"
             arg_type = float if isinstance(default, float) else int
 
             if key == "passes":
-                parser.add_argument(arg_name, type=arg_type, default=default, choices=range(1, 21),
-                                    help="Number of detection passes (1-20)")
+                parser.add_argument(arg_name, type=arg_type, default=default, choices=range(1, 101),
+                                    help="Number of detection passes (1-100)")
             else:
                 parser.add_argument(arg_name, type=arg_type, default=default)
 
     def handle(self, *args, **kwargs):
+        multiprocessing.set_start_method('spawn', force=True)
+
+        from multiprocessing import freeze_support
+        freeze_support()
+
+        self._handle_multiprocess(**kwargs)
+
+    def _handle_multiprocess(self, **kwargs):
+        import os
+        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ContentBasedVideoRetrieval.settings")
+        import django
+        django.setup()
+
+        from VideoSearch.models import Video
 
         videos = Video.objects.all()
-        model = TransNetV2()
+        video_ids = [v.id for v in videos]
 
-        for video in videos:
-            path = Path(video.file_path)
-            existing_clips = Clip.objects.filter(video=video)
-            if existing_clips.exists():
-                if is_clip_coverage_complete(video):
-                    self.stdout.write(self.style_info(f"Skipping {path.name} - clips fully exist."))
-                    continue
-                else:
-                    self.stdout.write(self.style_warning(f"Incomplete clips for {path.name} - recalculating."))
-                    Clip.objects.filter(video=video).delete()
+        num_workers = kwargs.get("workers", 4)
+        self.stdout.write(self.style_info(f"Processing {len(video_ids)} videos using {num_workers} worker(s)."))
 
-            self.stdout.write(self.style_info(f"Processing {path.name}"))
+        if num_workers == 1:
+            # Run sequentially (no Pool)
+            results = [process_video_for_clips(vid, kwargs) for vid in video_ids]
+        else:
+            with Pool(processes=num_workers) as pool:
+                results = pool.map(partial(process_video_for_clips, kwargs=kwargs), video_ids)
 
-            clips, predictions = extract_clips(model, video, path, **kwargs)
+        for msg in results:
+            self.stdout.write(self.style_success(msg))
 
-            for start_frame, end_frame in clips:
-                clip = Clip.objects.create(
-                    video=video,
-                    start_frame=start_frame,
-                    end_frame=end_frame
-                )
-                ClipPredictionCache.store(clip, predictions[start_frame:end_frame + 1])
+def process_video_for_clips(video_id, kwargs):
+    import os
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ContentBasedVideoRetrieval.settings")
+    import django
+    django.setup()
 
-            self.stdout.write(self.style_success(f"Stored {len(clips)} clips for {path.name}"))
+    from VideoSearch.models import Video, Clip, ClipPredictionCache
+    from third_party.transnetv2.inference.transnetv2 import TransNetV2
+    from pathlib import Path
+
+    video = Video.objects.get(id=video_id)
+    path = Path(video.file_path)
+
+    existing_clips = Clip.objects.filter(video=video)
+    if existing_clips.exists() and is_clip_coverage_complete(video):
+        return f"Skipping {path.name} - clips fully exist."
+
+    Clip.objects.filter(video=video).delete()
+
+    model = TransNetV2()
+    clips, predictions = extract_clips(model, video, path, **kwargs)
+
+    for start_frame, end_frame in clips:
+        clip = Clip.objects.create(
+            video=video,
+            start_frame=start_frame,
+            end_frame=end_frame
+        )
+        ClipPredictionCache.store(clip, predictions[start_frame:end_frame + 1])
+
+    return f"Stored {len(clips)} clips for {path.name}"
             
 def is_clip_coverage_complete(video):
+    from VideoSearch.models import Clip
     clips = Clip.objects.filter(video=video).order_by('start_frame')
     if not clips.exists():
         return False
