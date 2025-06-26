@@ -16,12 +16,13 @@ class Command(BaseCommand):
             return
 
         video_files = [f for f in video_dir.rglob('*') if is_valid_video(f)]
-        if not video_files:
-            self.stdout.write(self.style_warning(f"Directory '{video_dir}' is empty or contains no supported video files."))
-            return
 
         valid_paths = set(str(f.resolve()) for f in video_files)
         self.remove_stale_videos(valid_paths)
+
+        if not video_files:
+            self.stdout.write(self.style_warning(f"Directory '{video_dir}' is empty or contains no supported video files."))
+            return
 
         for full_path in video_files:
             self.import_video_file(full_path)
