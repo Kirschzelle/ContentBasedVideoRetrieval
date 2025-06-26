@@ -1,33 +1,37 @@
 document.addEventListener("DOMContentLoaded", function () {
+    const params = new URLSearchParams(window.location.search);
     const query = new URLSearchParams(window.location.search).get("q");
+    const entries = Array.from(params.entries());
     const resultContainer = document.getElementById("progressive-results");
     const loadMoreBtn = document.getElementById("load-more");
     const returnedKeyframes = new Set();
     let resultsFound = false;
     let stop = false;
-
+    const [key, value] = entries[1] || [];
     let fetchInProgress = false;
 
     async function fetchNextResult() {
-        if (!query || stop || fetchInProgress) return;
+        if (!key || stop || fetchInProgress) return;
         fetchInProgress = true;
 
         const params = new URLSearchParams();
         params.append("q", query);
         [...returnedKeyframes].forEach(id => params.append("returned[]", id));
 
-        const filtersRaw = new URLSearchParams(window.location.search).get("filters");
-        if (filtersRaw) {
-            filtersRaw.split(",").forEach(pair => params.append("filters[]", pair));
+        if (key && key.startsWith("filters[")) {
+            const match = key.match(/^filters\[(.+)\]$/);
+            if (match) {
+                params.append("filters[]", match[1]);
+            }
         }
 
         try {
-            const response = await fetch(`/api/search/?${params.toString()}`);
+            const response = await fetch(`/api/color/?${params.toString()}`);
             const data = await response.json();
 
             if (data.done || !data.keyframe_id) {
                 if (!resultsFound) {
-                    resultContainer.innerHTML = `<p>No clips found matching "${query}".</p>`;
+                    resultContainer.innerHTML = `<p>No clips found matching "${query}" with a color filter.</p>`;
                 }
                 stop = true;
                 loadMoreBtn.disabled = true;
@@ -60,7 +64,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    if (query) {
+    if (key) {
         loadMoreBtn.style.display = "none";
         fetchNextResult();
     }
