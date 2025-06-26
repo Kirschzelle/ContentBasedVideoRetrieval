@@ -61,18 +61,19 @@ class Searcher:
     def compute_total_similarity(self, query_embedding, candidate_kf, filters):
         distances = []
 
-        canidate_features = candidate_kf.get_features_from_keyframe()
+        candidate_features = candidate_kf.get_features_from_keyframe()
 
-        emb /= np.linalg.norm(canidate_features["clip_emb"])
+        emb = candidate_features["clip_emb"]
+        emb /= np.linalg.norm(emb)
         distances.append(np.dot(query_embedding, emb))
 
         for kf, categories in filters.items():
             filter_features = kf.get_features_from_keyframe()
             for category in categories:
                 if category == "embeddings":
-                    result = ufil.filter_embedding(canidate_features, filter_features)
+                    result = ufil.filter_embedding(candidate_features, filter_features)
                 elif category == "colors":
-                    result = ufil.filter_colors(canidate_features, filter_features)
+                    result = ufil.filter_colors(candidate_features, filter_features)
                 distances.append(result)
 
         alpha = compute_adaptive_alpha(len(distances))

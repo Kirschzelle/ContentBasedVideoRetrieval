@@ -26,6 +26,10 @@ document.querySelectorAll(".drag-drop-area").forEach(area => {
         imgPreview.src = imgSrc;
         imgPreview.style.display = "block";
 
+        const params = new URLSearchParams(window.location.search);
+        params.set("cfilter", encodeURIComponent(imgSrc));
+        window.location.search = params.toString();
+
         const tempImg = new Image();
         tempImg.crossOrigin = "anonymous";
         tempImg.src = imgSrc;
