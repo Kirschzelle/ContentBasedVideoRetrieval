@@ -162,7 +162,6 @@ def refine_and_store_keyframes(candidates, clip, feature_extractor, threshold):
     from VideoSearch.models import Keyframe
     while candidates:
         best_frame = feature_extractor.select_representative(candidates)
-
         if not best_frame:
             break
 
