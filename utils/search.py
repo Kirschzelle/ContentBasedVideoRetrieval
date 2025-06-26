@@ -4,7 +4,8 @@ import numpy as np
 from transformers import CLIPTokenizer, CLIPModel
 from VideoSearch.models import Keyframe
 from VideoSearch.utils.hardware import EmbeddingModelSelector
-from VideoSearch.utils.visual_feature_extractor import compute_distance
+from VideoSearch.utils.visual_feature_extractor import compute_distance, nonlinear_pooling
+import utils.filters as ufil
 
 class Searcher:
     def __init__(self):
@@ -37,15 +38,11 @@ class Searcher:
         best_similarity = -1.0
 
         for idx, kf in enumerate(self.remaining_keyframes):
-            emb = kf.load_embedding_clip()
-            if emb is None:
+            score = self.compute_total_similarity(query_embedding, kf, filters)
+            if score is None:
                 continue
-
-            emb /= np.linalg.norm(emb)
-            similarity = np.dot(query_embedding, emb)
-
-            if similarity > best_similarity:
-                best_similarity = similarity
+            if score > best_similarity:
+                best_similarity = score
                 best_match = kf
                 match_index = idx
 
@@ -60,6 +57,26 @@ class Searcher:
             return [best_match]
 
         return []
+
+    def compute_total_similarity(self, query_embedding, candidate_kf, filters):
+        distances = []
+
+        canidate_features = candidate_kf.get_features_from_keyframe()
+
+        emb /= np.linalg.norm(canidate_features["clip_emb"])
+        distances.append(np.dot(query_embedding, emb))
+
+        for kf, categories in filters.items():
+            filter_features = kf.get_features_from_keyframe()
+            for category in categories:
+                if category == "embeddings":
+                    result = ufil.filter_embedding(canidate_features, filter_features)
+                elif category == "colors":
+                    result = ufil.filter_colors(canidate_features, filter_features)
+                distances.append(result)
+
+        alpha = compute_adaptive_alpha(len(distances))
+        return nonlinear_pooling(distances, alpha)
 
     def encode_text(self, text: str) -> np.ndarray:
         if text == self.last_query and self.last_embedding is not None:
@@ -89,3 +106,6 @@ class Searcher:
 
         for idx in reversed(to_remove):
             del self.remaining_keyframes[idx]
+
+def compute_adaptive_alpha(num_values: int, base_alpha: float = 0.5, max_alpha: float = 7.0, ramp : float = 1.5):
+    return min(max_alpha, base_alpha + np.log1p(num_values - 1) * ramp)
