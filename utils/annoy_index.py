@@ -17,7 +17,7 @@ def load_all_clip_embeddings():
 
     return id_map, np.stack(embeddings)
 
-def build_annoy_index(feature_name, kf_lookup, n_trees=500):
+def build_annoy_index(feature_name, kf_lookup, n_trees=700):
     dim = None
     index = None
     id_map = {}

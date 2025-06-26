@@ -57,7 +57,7 @@ class Searcher:
 
         query_embedding = self.encode_text(query)
 
-        clip_ids = self.clip_index.get_nns_by_vector(query_embedding, 10000)
+        clip_ids = self.clip_index.get_nns_by_vector(query_embedding, 5000)
         filter_ids = set()
 
         for kf, categories in filters.items():

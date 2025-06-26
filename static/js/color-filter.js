@@ -1,18 +1,29 @@
 document.addEventListener("DOMContentLoaded", function () {
     const params = new URLSearchParams(window.location.search);
-    const filterTypes = ["colors", "embeddings", "objects"];
+    const filtersToLoad = [
+        ["colors", 3],
+        ["embeddings", 3],
+        ["objects", 1],
+    ];
 
-    for (const type of filterTypes) {
-        const previewSrc = localStorage.getItem(`filterPreview_${type}`);
-        const hasFilter = [...params.keys()].some(k => k.startsWith("filters[") && k.includes(`:${type}`));
-        const container = document.getElementById(`${type.slice(0, -1)}-filter`);
-        const imgPreview = container?.querySelector("img.preview-image");
+    for (const [filterType, count] of filtersToLoad) {
+        for (let i = 1; i <= count; i++) {
+            const idSuffix = filterType === "objects" ? "" : `-${i}`;
+            const containerId = `${filterType.slice(0, -1)}-filter${idSuffix}`;
+            const container = document.getElementById(containerId);
+            if (!container) continue;
 
-        if (previewSrc && hasFilter && imgPreview) {
-            imgPreview.src = previewSrc;
-            imgPreview.style.display = "block";
-        } else {
-            localStorage.removeItem(`filterPreview_${type}`);
+            const storageKey = `filterPreview_${filterType}_${i}`;
+            const previewSrc = localStorage.getItem(storageKey);
+            const hasFilter = [...params.keys()].some(k => k.startsWith("filters[") && k.includes(`:${filterType}`));
+            const imgPreview = container.querySelector("img.preview-image");
+
+            if (previewSrc && hasFilter && imgPreview) {
+                imgPreview.src = previewSrc;
+                imgPreview.style.display = "block";
+            } else {
+                localStorage.removeItem(storageKey);
+            }
         }
     }
     const query = params.get("q");
@@ -31,7 +42,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const match = key.match(/^filters\[(.+)\]$/);
             return match ? match[1] : null;
         })
-        .filter(Boolean); // remove nulls
+        .filter(Boolean);
 
     async function fetchNextResult() {
         if (!query || stop || fetchInProgress) return;
@@ -70,7 +81,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 const div = document.createElement("div");
                 div.className = "clip-card preview-container-home";
                 div.innerHTML = `
-                    <a href="/detailed_view/${result.keyframe_id}?q=${encodeURIComponent(query)}" draggable="false">
+                    <a href="/detailed_view/${result.keyframe_id}?${window.location.search.substring(1)}" draggable="false">
                         <img src="${result.thumbnail}" alt="Keyframe" data-keyframe-id="${result.keyframe_id}" class="thumbnail draggable-image" draggable="true" />
                     </a>
                 `;
@@ -89,4 +100,22 @@ document.addEventListener("DOMContentLoaded", function () {
         loadMoreBtn.style.display = "none";
         fetchNextResult();
     }
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+    const form = document.getElementById("search-form");
+
+    form.addEventListener("submit", (e) => {
+        e.preventDefault();
+
+        const query = form.q.value.trim();
+        const params = new URLSearchParams(window.location.search);
+
+        if (!query) return;
+
+        params.set("q", query);
+
+        const baseUrl = window.location.origin + window.location.pathname;
+        window.location.href = `${baseUrl}?${params.toString()}`;
+    });
 });

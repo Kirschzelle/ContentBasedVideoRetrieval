@@ -4,20 +4,39 @@
 {% block content %}
 <div class="main-content">
     <div class="sidebar">
-        <form method="GET" onsubmit="event.preventDefault(); window.location.href='?q=' + encodeURIComponent(this.q.value);">
+        <form id="search-form">
             <input type="text" name="q" placeholder="Query..." required>
         </form>
 
-        <div id="color-filter" class="drag-drop-area">
-            <p>Drag & Drop for: Color Filter</p>
-            <img class="preview-image" src="" alt="Preview" style="display:none; max-width: 100%;">
+        <h3>Color Filters</h3>
+        <div id="color-filter-1" class="drag-drop-area">
+            <p>Drag & Drop for: Color Filter 1</p>
+            <img class="preview-image" src="" alt="Preview" style="display:none;">
         </div>
-
-        <div id="embedding-filter" class="drag-drop-area">
-            <p>Drag & Drop for: Embedding Filter</p>
+        <div id="color-filter-2" class="drag-drop-area">
+            <p>Drag & Drop for: Color Filter 2</p>
+            <img class="preview-image" src="" alt="Preview" style="display:none;">
+        </div>
+        <div id="color-filter-3" class="drag-drop-area">
+            <p>Drag & Drop for: Color Filter 3</p>
             <img class="preview-image" src="" alt="Preview" style="display:none;">
         </div>
 
+        <h3>Embedding Filters</h3>
+        <div id="embedding-filter-1" class="drag-drop-area">
+            <p>Drag & Drop for: Embedding Filter 1</p>
+            <img class="preview-image" src="" alt="Preview" style="display:none;">
+        </div>
+        <div id="embedding-filter-2" class="drag-drop-area">
+            <p>Drag & Drop for: Embedding Filter 2</p>
+            <img class="preview-image" src="" alt="Preview" style="display:none;">
+        </div>
+        <div id="embedding-filter-3" class="drag-drop-area">
+            <p>Drag & Drop for: Embedding Filter 3</p>
+            <img class="preview-image" src="" alt="Preview" style="display:none;">
+        </div>
+
+        <h3>Object Filter</h3>
         <div id="object-filter" class="drag-drop-area">
             <p>Drag & Drop for: Object Filter</p>
             <img class="preview-image" src="" alt="Preview" style="display:none;">

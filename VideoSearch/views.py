@@ -7,7 +7,7 @@ from utils.search import Searcher
 from collections import defaultdict
 import sys
 import os
-import re
+from django.utils.http import urlencode
 
 _searcher_instance = None
 
@@ -51,7 +51,7 @@ def api_search_view(request):
         except ValueError:
             continue
 
-    results = get_searcher().search_incremental(query, returned_ids=returned_ids, filters=filters, top_k=500)
+    results = get_searcher().search_incremental(query, returned_ids=returned_ids, filters=filters, top_k=1000)
     if not results:
         return JsonResponse({"done": True})
 
@@ -87,9 +87,14 @@ def detailed_view(request, keyframe_id):
         return JsonResponse({"error": "Image path is not within MEDIA_ROOT"}, status=500)
 
     image_url = settings.MEDIA_URL.rstrip("/") + "/" + str(relative_path).replace("\\", "/")
+
+    # Add this to preserve query + filters
+    query_string = urlencode(request.GET, doseq=True)
+
     context = {
         "keyframe": keyframe,
         "keyframe_img": image_url,
-        "query": query
+        "query": query,
+        "query_string": query_string,  # ← added
     }
     return render(request, "detailed_view.html", context)
