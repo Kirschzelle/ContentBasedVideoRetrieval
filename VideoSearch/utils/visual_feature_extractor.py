@@ -2,6 +2,7 @@ import numpy as np
 from VideoSearch.utils.embeddings import ImageEmbedder, calculate_combined_distance as embedding_distance, get_distance_to_existing_keyframes as embedding_ex_keyframes_distance
 from VideoSearch.utils.color_features import ColorFeatureExtractor , compute_distance as color_distance, distance_to_existing_keyframes as color_ex_keyframes_distance
 import time
+from VideoSearch.utils.objects import soft_object_distance as object_distance
 
 class VisualFeatureExtractor:
     def __init__(self, use_embeddings=True, use_color=True, command=None):
@@ -158,6 +159,10 @@ def compute_distance(feat_a, feat_b):
 
     if "histogram" in feat_a and "histogram" in feat_b:
         dist = color_distance(feat_a, feat_b)
+        distances.append(dist)
+
+    if "object_vector" in feat_a and "object_vector" in feat_b:
+        dist = object_distance(feat_a, feat_b)
         distances.append(dist)
 
     combined_score = nonlinear_pooling(distances)

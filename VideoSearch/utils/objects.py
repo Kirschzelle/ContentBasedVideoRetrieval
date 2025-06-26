@@ -18,6 +18,15 @@ YOLO_CLASSES = [
     "scissors", "teddy bear", "hair drier", "toothbrush"
 ]
 
+def label_dict_to_vector(label_conf: dict) -> np.ndarray:
+    """
+    Converts a YOLO label-confidence dict into an 80-dim numpy array.
+    """
+    vec = np.zeros(80, dtype=np.float32)
+    for i, cls_name in enumerate(YOLO_CLASSES):
+        vec[i] = label_conf.get(cls_name, 0.0)
+    return vec
+
 class ObjectDetector:
     def __init__(self, model_name="yolov8x.pt", command=None, conf_threshold=0.05):
         self.command = command
@@ -30,7 +39,10 @@ class ObjectDetector:
         else:
             print(msg)
 
-    def extract_objects(self, image: Image.Image) -> dict:
+    def extract_vector(self, image: Image.Image) -> np.ndarray:
+        """
+        Returns an 80-dim object vector for a single image.
+        """
         results = self.model.predict(image, conf=self.conf_threshold, verbose=False)
         label_conf = {}
 
@@ -40,11 +52,14 @@ class ObjectDetector:
                 if cls_name not in label_conf or score > label_conf[cls_name]:
                     label_conf[cls_name] = float(score)
 
-        return {"objects": label_conf.copy()}
+        return label_dict_to_vector(label_conf)
 
-    def extract_objects_batch(self, images: List[Image.Image]) -> List[dict]:
+    def extract_vector_batch(self, images: List[Image.Image]) -> List[np.ndarray]:
+        """
+        Returns a list of 80-dim vectors for a batch of images.
+        """
         batch_results = self.model.predict(images, conf=self.conf_threshold, verbose=False)
-        results = []
+        vectors = []
 
         for r in batch_results:
             label_conf = {}
@@ -52,39 +67,49 @@ class ObjectDetector:
                 cls_name = YOLO_CLASSES[int(cls_id)]
                 if cls_name not in label_conf or score > label_conf[cls_name]:
                     label_conf[cls_name] = float(score)
-            results.append(label_conf)
+            vectors.append(label_dict_to_vector(label_conf))
 
-        return [{"objects": obj} for obj in results]
+        return vectors
 
 # ---------- Comparison Logic ----------
 
 def soft_object_distance(a: dict, b: dict) -> float:
     """
-    Soft Jaccard distance using confidence scores.
+    Computes cosine distance between 'object_vec' vectors inside two feature dicts.
+    Returns 1.0 if either vector is missing or zero.
     """
-    if not "objects" in a or not "objects" in b:
+    vec_a = a.get("object_vec")
+    vec_b = b.get("object_vec")
+
+    if vec_a is None or vec_b is None:
         return 1.0
 
-    intersection = 0.0
-    union = 0.0
+    return object_vector_distance(vec_a, vec_b)
 
-    all_keys = set(a["objects"].keys()) | set(b["objects"].keys())
-    for k in all_keys:
-        val_a = a["objects"].get(k, 0.0)
-        val_b = b["objects"].get(k, 0.0)
-        intersection += min(val_a, val_b)
-        union += max(val_a, val_b)
+def object_vector_distance(a: np.ndarray, b: np.ndarray) -> float:
+    if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:
+        return 1.0
+    a_norm = a / np.linalg.norm(a)
+    b_norm = b / np.linalg.norm(b)
+    return 1.0 - np.dot(a_norm, b_norm)
 
-    return 1.0 - (intersection / union) if union > 0 else 1.0
-
-def distance_to_existing_keyframes(clip, query_labels: dict):
+def distance_to_existing_keyframes(clip, query_vector: np.ndarray) -> tuple[float, float]:
+    """
+    Compares a query object vector to all keyframes in a clip.
+    Returns (min_distance, max_distance), using cosine distance.
+    """
     keyframes = Keyframe.objects.filter(clip=clip)
-    if not keyframes.exists():
+    if not keyframes.exists() or query_vector is None:
         return 1.0, 1.0
 
     distances = []
     for kf in keyframes:
-        labels = kf.load_object_labels()
-        if labels:
-            distances.append(soft_object_distance(query_labels, {"objects": labels}))
+        kf_vec = kf.load_object_vector()
+        if kf_vec is not None:
+            dist = object_vector_distance(query_vector, kf_vec)
+            distances.append(dist)
+
+    if not distances:
+        return 1.0, 1.0
+
     return min(distances), max(distances)

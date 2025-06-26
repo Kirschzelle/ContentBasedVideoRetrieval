@@ -25,7 +25,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const response = await fetch(`/api/search/?${params.toString()}`);
             const data = await response.json();
 
-            if (data.done || !data.keyframe_id) {
+            if (data.done || !data.results || data.results.length === 0) {
                 if (!resultsFound) {
                     resultContainer.innerHTML = `<p>No clips found matching "${query}".</p>`;
                 }
@@ -36,22 +36,20 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             resultsFound = true;
-            returnedKeyframes.add(data.keyframe_id);
+            data.results.forEach(result => {
+                returnedKeyframes.add(result.keyframe_id);
 
-            const div = document.createElement("div");
-            div.className = "clip-card preview-container-home";
-            div.innerHTML = `
-            <a href="/detailed_view/${data.keyframe_id}?q=${encodeURIComponent(query)}" draggable="false">
-                <img src="${data.thumbnail}" alt="Keyframe" data-keyframe-id="${data.keyframe_id}" class="thumbnail draggable-image" draggable="true" />
-            </a>
-            `;
+                const div = document.createElement("div");
+                div.className = "clip-card preview-container-home";
+                div.innerHTML = `
+                    <a href="/detailed_view/${result.keyframe_id}?q=${encodeURIComponent(query)}" draggable="false">
+                        <img src="${result.thumbnail}" alt="Keyframe" data-keyframe-id="${result.keyframe_id}" class="thumbnail draggable-image" draggable="true" />
+                    </a>
+                `;
 
-            resultContainer.appendChild(div);
+                resultContainer.appendChild(div);
 
-            setTimeout(() => {
-                fetchInProgress = false;
-                fetchNextResult();
-            }, 1);
+            });
 
         } catch (err) {
             console.error("Error fetching result:", err);
