@@ -76,7 +76,6 @@ class Searcher:
         alpha = compute_adaptive_alpha(len(distances))
         return nonlinear_pooling(distances, alpha)
 
-
     def _compute_clip_similarity(self, query_embedding, candidate_features):
         emb = candidate_features.get("clip_emb")
         if emb is None:
@@ -87,7 +86,6 @@ class Searcher:
         emb /= norm
         return np.dot(query_embedding, emb)
 
-
     def _compute_object_similarity(self, candidate_features):
         if self.last_query_objects is None:
             return None
@@ -97,11 +95,12 @@ class Searcher:
         weight = 0.2 + 0.8 * avg_conf
         return object_distance * weight
 
-
     def _compute_filter_distances(self, candidate_features, filters):
         distances = []
         for kf, categories in filters.items():
-            filter_features = kf.get_features_from_keyframe()
+            print(kf, categories)
+            filter_keyframe = Keyframe.objects.get(id=kf)
+            filter_features = filter_keyframe.get_features_from_keyframe()
             for category in categories:
                 if category == "embeddings":
                     result = ufil.filter_embedding(candidate_features, filter_features)
