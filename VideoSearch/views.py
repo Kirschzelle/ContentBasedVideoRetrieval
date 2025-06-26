@@ -66,13 +66,6 @@ def api_search_view(request):
     
     return JsonResponse({
         "keyframe_id": kf.id,
-        "frame": kf.frame,
-        "clip_id": kf.clip.id,
-        "clip_start_frame": kf.clip.start_frame,
-        "clip_end_frame": kf.clip.end_frame,
-        "video_id": kf.clip.video.id,
-        "media_url": kf.clip.video.media_url(),
-        "fps": kf.clip.video.fps(),
         "thumbnail": image_url
     })
 
