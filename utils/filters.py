@@ -4,14 +4,14 @@ from VideoSearch.utils.objects import soft_object_distance as filter_objects_dis
 from VideoSearch.utils.objects import YOLO_CLASSES
 import difflib
 
-def filter_embedding(canidate_features, filter_features):
-    return filter_embedding_dist(canidate_features, filter_features)
+def filter_embedding(candidate_features, filter_features):
+    return filter_embedding_dist(candidate_features, filter_features)
 
-def filter_colors(canidate_features, filter_features):
-    return filter_colors_dist(canidate_features, filter_features)
+def filter_colors(candidate_features, filter_features):
+    return filter_colors_dist(candidate_features, filter_features)
 
-def filter_objects(canidate_features, filter_features):
-    return filter_objects_dist(canidate_features, filter_features)
+def filter_objects(candidate_features, filter_features):
+    return filter_objects_dist(candidate_features, filter_features)
 
 def find_fuzzy_object_matches(query: str, threshold=0.75, max_matches=5) -> dict:
     """
