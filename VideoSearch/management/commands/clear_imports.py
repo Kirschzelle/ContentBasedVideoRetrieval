@@ -9,4 +9,4 @@ class Command(BaseCommand):
         if count > 0:
             self.stdout.write(self.style_success(f"Cleared {count} video(s) and related data."))
         else:
-            self.stdout.write(self.style_error(f"No imported videos found. Nothing to clear."))
+            self.stdout.write(self.style_error("No imported videos found. Nothing to clear."))
