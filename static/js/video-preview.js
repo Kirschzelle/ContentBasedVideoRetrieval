@@ -93,4 +93,8 @@ document.addEventListener("DOMContentLoaded", () => {
             seek(e);
         }
     });
+
+    video.addEventListener("play", () => {
+        container.classList.add("played");
+    });
 });

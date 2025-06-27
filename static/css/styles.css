@@ -112,16 +112,26 @@ h2 {
     object-fit: cover;
 }
 
+.thumbnail {
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+
 .preview-video {
     opacity: 0;
     z-index: 0;
+    transition: opacity 0.3s ease;
 }
 
-.preview-container:hover .preview-video {
+.preview-container:hover .preview-video,
+.preview-container.played .preview-video {
     opacity: 1;
+    z-index: 1;
 }
 
-.preview-container:hover .thumbnail {
+.preview-container:hover .thumbnail,
+.preview-container.played .thumbnail {
     opacity: 0;
 }
 
