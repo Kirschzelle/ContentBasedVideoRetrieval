@@ -61,7 +61,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     container.addEventListener("mouseenter", () => {
         video.pause();
-        video.currentTime = keyframeStartTime;;
 
         const onSeeked = () => {
             video.play().catch(() => { });
@@ -73,7 +72,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     container.addEventListener("mouseleave", () => {
         video.pause();
-        video.currentTime = keyframeStartTime;;
     });
 
     hitArea.addEventListener('mousedown', (e) => {
