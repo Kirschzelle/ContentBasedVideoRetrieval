@@ -8,7 +8,10 @@
     </a>
     <div class="keyframe-information">
         <p>Video-ID: <span id="mediaItemName">{{ keyframe.clip.video.file_name }}</span></p>
-        <p>Start time in milliseconds: <span id="startMilliseconds"></span></p>
+        <p>
+            Start time in milliseconds:
+            <input type="number" id="startMilliseconds" step="1" min="0" value="" />
+        </p>
         <p>End time in milliseconds: <span id="endMilliseconds"></span></p>
         <button id="reset" type="submit" class="reset-button"  data-start-frame="{{ keyframe.frame }}" data-clip-start-frame="{{ keyframe.clip.start_frame }}" data-fps="{{ keyframe.clip.video.fps }}">Reset Starttime</button>
     </div>
@@ -16,17 +19,9 @@
         <h4>Your Keyframe:</h4>
         <div class="clip-card preview-container video-preview" data-start-frame="{{ keyframe.frame }}" data-clip-start-frame="{{ keyframe.clip.start_frame }}" data-clip-end-frame="{{ keyframe.clip.end_frame }}" data-fps="{{ keyframe.clip.video.fps }}">
             <img src="{{ keyframe_img }}" alt="Keyframe" class="thumbnail">
-            <video id="{{ keyframe.clip.video.id }}" alt="Video" class="preview-video" preload="auto" loop playsinline >
+            <video id="{{ keyframe.clip.video.id }}" alt="Video" class="preview-video" preload="auto" loop playsinline controls>
                 <source src="{{ keyframe.clip.video.media_url }}" type="video/mp4"/>
             </video>
-            <div class="video-overlay">
-            <div class="progress-bar">
-                <div class="hit-area"></div>
-                <div class="progress-fill"></div>
-                <div class="progress-knob"></div>
-            </div>
-            <span class="time-left">0:00</span>
-            </div>
         </div>
         <button id="submit" type="submit" class="submit-button" data-video-id="{{ keyframe.clip.video.file_name }}">Submit to the DRES Server</button>
         <div id="submit-result-message" class="submit-result"></div>

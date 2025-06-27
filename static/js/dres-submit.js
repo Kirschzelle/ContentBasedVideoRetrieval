@@ -4,15 +4,15 @@ document.getElementById("reset").addEventListener("click", function () {
     const fps = parseFloat(this.dataset.fps);
 
     const startMillisecondsDiv = document.getElementById("startMilliseconds");
-    startMillisecondsDiv.textContent = Math.round(((clipStartFrame + startFrame) / fps) * 1000);
+    startMillisecondsDiv.value = Math.round(((clipStartFrame + startFrame) / fps) * 1000);
 });
 
 document.getElementById("submit").addEventListener("click", async function () {
     const submitButton = this;
     const videoId = submitButton.dataset.videoId;
 
-    const startMilliseconds = document.getElementById("startMilliseconds").textContent;
-    const endMilliseconds = document.getElementById("endMilliseconds").textContent;
+    const startMilliseconds = document.getElementById("startMilliseconds").value;
+    const endMilliseconds = document.getElementById("endMilliseconds").value;
 
     try {
         // LOGIN
@@ -36,7 +36,6 @@ document.getElementById("submit").addEventListener("click", async function () {
         const data = await loginResponse.json();
         console.log('Data:', data);
 
-        //FETCH EVALUATION SESSIONS
         const evaluationResponse = await fetch("https://vbs.videobrowsing.org/api/v2/client/evaluation/list", {
             method: "GET",
             credentials: "include"
@@ -75,7 +74,7 @@ document.getElementById("submit").addEventListener("click", async function () {
                                 mediaItemName: videoId,
                                 mediaItemCollectionName: "IVADL",
                                 start: startMilliseconds,
-                                end: endMilliseconds
+                                end: startMilliseconds
                             }
                         ]
                     }
@@ -96,4 +95,18 @@ document.getElementById("submit").addEventListener("click", async function () {
         console.error(err);
         alert("❌ Error submitting to DRES: " + err.message);
     }
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+    const startMillisecondsInput = document.getElementById("startMilliseconds");
+    const video = document.querySelector("video");
+    const fps = parseFloat(video.closest(".preview-container").dataset.fps);
+
+    startMillisecondsInput.addEventListener("change", () => {
+        const newStartMs = parseInt(startMillisecondsInput.value);
+        if (!isNaN(newStartMs)) {
+            const newStartTime = newStartMs / 1000;
+            video.currentTime = newStartTime;
+        }
+    });
 });

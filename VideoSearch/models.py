@@ -8,6 +8,7 @@ import cv2
 import subprocess
 import tempfile
 from PIL import Image
+import io
 
 KEYFRAME_ROOT = Path("data/keyframes")
 
@@ -50,74 +51,91 @@ class Video(models.Model):
 
     def get_frame_image(self, frame_index: int, as_pil: bool = True):
         """
-        Extract a frame by absolute frame index.
-
-        :param frame_index: Absolute frame number in the video.
-        :param as_pil: If True, returns the frame as a `PIL.Image.Image`; otherwise as a raw BGR `np.ndarray`.
-        :return: `PIL.Image.Image` or `np.ndarray` if successful, otherwise `None`.
+        Extract a frame using ffmpeg instead of OpenCV.
+        This method is more robust for corrupted or complex videos.
         """
-        if frame_index < 0 or frame_index >= self.frame_count:
+        fps = self.frame_rate
+        time_sec = frame_index / fps
+
+        command = [
+            "ffmpeg",
+            "-loglevel", "error",
+            "-ss", str(time_sec),
+            "-i", str(self.file_path),
+            "-frames:v", "1",
+            "-f", "image2pipe",
+            "-vcodec", "png",
+            "-"
+        ]
+
+        try:
+            output = subprocess.check_output(command, stderr=subprocess.DEVNULL)
+            img = Image.open(io.BytesIO(output))
+            return img if as_pil else np.array(img)
+        except subprocess.CalledProcessError:
+            print(f"[ERROR] ffmpeg failed to extract frame {frame_index} at {time_sec}s from {self.file_path}")
             return None
-
-        cap = cv2.VideoCapture(str(self.file_path))
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-        success, frame = cap.read()
-        cap.release()
-
-        if not success or frame is None:
+        except Exception as e:
+            print(f"[ERROR] Unexpected error extracting frame {frame_index} from {self.file_path}: {e}")
             return None
-
-        return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)) if as_pil else frame
 
     def get_frame_range_images(self, start_frame: int, end_frame: int, as_pil=True) -> list:
         """
-        Efficiently extracts a sequence of frames using ffmpeg.
-
-        :param start_frame: First frame index (inclusive).
-        :param end_frame: Last frame index (inclusive).
-        :param as_pil: Return PIL images or raw file paths.
-        :return: List of images as `PIL.Image.Image` if `as_pil=True`, or `np.ndarray` in BGR format otherwise.
+        Extracts a sequence of frames using ffmpeg (frame accurate).
         """
         if start_frame < 0 or end_frame >= self.frame_count or end_frame < start_frame:
             return []
 
+        fps = self.frame_rate
         with tempfile.TemporaryDirectory() as tmpdir:
-            out_pattern = Path(tmpdir) / "frame_%04d.jpg"
+            out_pattern = Path(tmpdir) / "frame_%05d.png"
             cmd = [
                 "ffmpeg",
+                "-loglevel", "error",
                 "-i", str(self.file_path),
                 "-vf", f"select='between(n\\,{start_frame}\\,{end_frame})'",
                 "-vsync", "0",
-                "-q:v", "2",
-                str(out_pattern),
-                "-loglevel", "quiet"
+                str(out_pattern)
             ]
-            subprocess.run(cmd, check=True)
 
-            images = sorted(Path(tmpdir).glob("frame_*.jpg"))
+            try:
+                subprocess.run(cmd, check=True)
+            except subprocess.CalledProcessError:
+                print(f"[ERROR] ffmpeg failed to extract frames {start_frame}-{end_frame} from {self.file_path}")
+                return []
+
+            images = sorted(Path(tmpdir).glob("frame_*.png"))
             if as_pil:
-                loaded_images = []
-                for img_path in images:
-                    with Image.open(img_path) as im:
-                        loaded_images.append(im.convert("RGB").copy())
-                return loaded_images
+                return [Image.open(p).convert("RGB").copy() for p in images]
             else:
                 return [cv2.cvtColor(cv2.imread(str(p)), cv2.COLOR_BGR2RGB) for p in images]
 
-    def get_selected_frame_images(self, frame_numbers: list[int], as_pil=True):
+    def get_selected_frame_images(self, frame_numbers: list[int], as_pil=True) -> list:
+        """
+        Extracts selected frames using ffmpeg by seeking to each one individually.
+        """
         images = {}
-        cap = cv2.VideoCapture(str(self.file_path))
+        fps = self.frame_rate
 
         for frame_index in sorted(set(frame_numbers)):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-            success, frame = cap.read()
-            if success and frame is not None:
-                images[frame_index] = (
-                    Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                    if as_pil else frame
-                )
-
-        cap.release()
+            time_sec = frame_index / fps
+            try:
+                cmd = [
+                    "ffmpeg",
+                    "-loglevel", "error",
+                    "-ss", str(time_sec),
+                    "-i", str(self.file_path),
+                    "-frames:v", "1",
+                    "-f", "image2pipe",
+                    "-vcodec", "png",
+                    "-"
+                ]
+                output = subprocess.check_output(cmd)
+                img = Image.open(io.BytesIO(output))
+                images[frame_index] = img.convert("RGB") if as_pil else np.array(img)
+            except Exception as e:
+                print(f"[WARN] Failed to extract frame {frame_index} from {self.file_path}: {e}")
+                images[frame_index] = None
 
         return [images.get(f) for f in frame_numbers]
 
@@ -152,7 +170,11 @@ class Clip(models.Model):
         absolute_frame = self.start_frame + offset
         if absolute_frame > self.end_frame:
             return None
-        return self.video.get_frame_image(absolute_frame, as_pil=as_pil)
+        try:
+            frame = self.video.get_frame_image(absolute_frame)
+        except Exception as e:
+            print(f"Error reading frame {absolute_frame} from video {self.video.file_path}: {e}")
+        return frame
 
     def get_frame_range_images(self, start: int = 0, end: int = None, as_pil: bool = True):
         """
@@ -169,7 +191,11 @@ class Clip(models.Model):
         absolute_start = self.start_frame + start
         absolute_end = self.start_frame + end
 
-        return self.video.get_frame_range_images(absolute_start, absolute_end, as_pil=as_pil)
+        try:
+            frames = self.video.get_frame_range_images(absolute_start, absolute_end, as_pil=as_pil)
+        except Exception as e:
+            print(f"Error reading frame {absolute_start}-{absolute_end} from video {self.video.file_path}: {e}")
+        return frames
 
     def get_selected_frame_images(self, relative_indices: list[int], as_pil: bool = True):
         """
@@ -179,7 +205,12 @@ class Clip(models.Model):
             self.start_frame + i for i in relative_indices
             if self.start_frame + i <= self.end_frame
         ]
-        return self.video.get_selected_frame_images(absolute_indices, as_pil=as_pil)
+        try:
+            frames = self.video.get_selected_frame_images(absolute_indices, as_pil=as_pil)
+        except Exception as e:
+            print(f"Error reading frames {absolute_indices} from video {self.video.file_path}: {e}")
+            frames = []
+        return frames
 
     def __str__(self):
         return f"Clip {self.id}: Video {self.video} ({self.start_frame}f to {self.end_frame}f)"

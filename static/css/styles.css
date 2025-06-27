@@ -98,9 +98,7 @@ h2 {
 .preview-container-home,
 .preview-container {
     position: relative;
-    /* 1920/6 */
     width: 320px;
-    /* 1080/6 */
     height: 180px;
     overflow: hidden;
     border: 1px solid #ccc;
@@ -116,7 +114,6 @@ h2 {
 
 .preview-video {
     opacity: 0;
-    pointer-events: none;
     z-index: 0;
 }
 
@@ -149,50 +146,6 @@ h2 {
     opacity: 1;
 }
 
-.progress-bar {
-    flex: 1;
-    height: 4px;
-    background: #555;
-    margin: 0 8px;
-    position: relative;
-    cursor: pointer;
-}
-
-.hit-area {
-    position: absolute;
-    top: -8px;
-    bottom: -8px;
-    left: 0;
-    right: 0;
-    background: transparent;
-    pointer-events: auto;
-}
-
-.progress-fill {
-    pointer-events: none;
-    position: absolute;
-    height: 100%;
-    background: #00ff88;
-    width: 0%;
-}
-
-.progress-knob {
-    position: absolute;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #fff;
-    pointer-events: none;
-    z-index: 2;
-}
-
-.time-left {
-    min-width: 50px;
-    text-align: center;
-}
-
 .keyframe-information {
     display: flex;
     flex-direction: column;
@@ -212,10 +165,10 @@ h2 {
     margin-bottom: 20px;
 }
 
-.keyframe .preview-container {
-    width: 640px;
-    height: 360px;
-}
+    .keyframe .preview-container {
+        width: 2560px;
+        height: 1440px;
+    }
 
 .submit-button,
 .reset-button {

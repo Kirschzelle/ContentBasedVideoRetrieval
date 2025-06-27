@@ -11,8 +11,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const startFrame = parseInt(container.dataset.clipStartFrame);
     const endFrame = parseInt(container.dataset.clipEndFrame);
     const fps = parseFloat(container.dataset.fps);
-    const startSeconds = startFrame / fps;
-    const endSeconds = endFrame / fps;
+    const startSeconds = 0 / fps;
+    const endSeconds = video.duration;
     const keyframeStartFrame = parseFloat(container.dataset.startFrame);
     const keyframeStartTime = (startFrame + keyframeStartFrame) / fps;
 
@@ -21,23 +21,8 @@ document.addEventListener("DOMContentLoaded", () => {
     updateDetailedViewInformation(Math.round(keyframeStartTime * 1000));
 
     function updateDetailedViewInformation(startTime) {
-        startMillisecondsDiv.textContent = startTime;
+        startMillisecondsDiv.value = startTime;
         endMillisecondsDiv.textContent = Math.round((endFrame / fps) * 1000);
-    }
-
-    function formatTime(seconds) {
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
-        return `${mins}:${secs}`;
-    }
-
-    function updateProgressBar(currentTime) {
-        const remaining = endSeconds - currentTime;
-        timeLeftDisplay.textContent = formatTime(remaining);
-        const percent = ((currentTime - startSeconds) / (endSeconds - startSeconds)) * 100;
-        const clampedPercent = Math.max(0, Math.min(100, percent));
-        progressFill.style.width = `${clampedPercent}%`;
-        knob.style.left = `${clampedPercent}%`;
     }
 
     function seek(e) {
@@ -49,7 +34,6 @@ document.addEventListener("DOMContentLoaded", () => {
         updateDetailedViewInformation(Math.round(newTime * 1000));
         if (!isNaN(video.duration)) {
             video.currentTime = newTime;
-            updateProgressBar(newTime);
         }
     }
 
@@ -60,7 +44,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     video.addEventListener("timeupdate", () => {
         if (!isDragging) {
-            updateProgressBar(video.currentTime);
+            const currentTimeMs = Math.round(video.currentTime * 1000);
+            startMillisecondsDiv.value = currentTimeMs;
+
             if (video.currentTime >= endSeconds) {
                 video.pause();
                 video.currentTime = startSeconds;
