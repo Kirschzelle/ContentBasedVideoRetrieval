@@ -132,6 +132,8 @@ Download a subset of V3C-1 dataset from:
 https://www2.itec.aau.at/owncloud/index.php/s/4uqMvVtZEJSY7O8  
 Password: `IVADL2025`
 
+or any alternative videos you would like to use for search (all ffmpeg readable formats are supported!)
+
 Place videos in:
 
 ```
@@ -150,12 +152,14 @@ python manage.py migrate
 
 ### 2. Import and process videos
 ```bash
-python manage.py import_videos
-python manage.py extract_clips
-python manage.py extract_keyframes
+python manage.py full_import
+```
+for more details (for example to enable multi process) or on how to run the commands individually check them out using:
+```bash
+python manage.py help
 ```
 
-### 3. Optional: Run the server
+### 3. Run the server
 ```bash
 python manage.py runserver
 ```

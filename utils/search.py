@@ -1,5 +1,3 @@
-from asyncio.windows_events import INFINITE
-import time
 import torch
 import numpy as np
 from transformers import CLIPTokenizer, CLIPModel
