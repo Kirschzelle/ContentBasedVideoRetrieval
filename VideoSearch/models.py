@@ -292,6 +292,11 @@ class Keyframe(models.Model):
     # Object
     object_vector = models.BinaryField(null=True, blank=True)
 
+    # Audio transcript
+    transcript_text = models.TextField(null=True, blank=True)
+    transcript_confidence = models.FloatField(null=True, blank=True) 
+    transcript_context = models.TextField(null=True, blank=True)
+
     class Meta:
         unique_together = ("clip", "frame")
 
@@ -340,6 +345,14 @@ class Keyframe(models.Model):
     def load_object_vector(self):
         return self.decompress_array(self.object_vector) if self.object_vector else None
 
+    def get_transcript_data(self) -> dict:
+        """Returns transcript data for this keyframe."""
+        return {
+            "text": self.transcript_text,
+            "confidence": self.transcript_confidence,
+            "context": self.transcript_context
+        }
+
     def get_features_from_keyframe(self) -> dict:
         return {
             "clip_emb": self.load_embedding_clip(),
@@ -347,7 +360,8 @@ class Keyframe(models.Model):
             "histogram": self.load_histogram_hsv(),
             "palette": self.load_dominant_colors(),
             "colorfulness": self.colorfulness,
-            "object_vector": self.load_object_vector()
+            "object_vector": self.load_object_vector(),
+            "transcript": self.get_transcript_data()
         }
 
     @classmethod
@@ -360,7 +374,10 @@ class Keyframe(models.Model):
         histogram_hsv: np.ndarray = None,
         dominant_colors: np.ndarray = None,
         colorfulness: float = None,
-        object_vector: dict = None
+        object_vector: dict = None,
+        transcript_text: str = None,
+        transcript_confidence: float = None,
+        transcript_context: str = None
     ):
         keyframe = cls.objects.create(
             clip=clip,
@@ -371,6 +388,9 @@ class Keyframe(models.Model):
             dominant_colors=cls.compress_array(dominant_colors) if dominant_colors is not None else None,
             colorfulness=colorfulness,
             object_vector=cls.compress_array(object_vector) if object_vector is not None else None,
+            transcript_text=transcript_text,
+            transcript_confidence=transcript_confidence,
+            transcript_context=transcript_context
         )
         keyframe.save_image()
         return keyframe

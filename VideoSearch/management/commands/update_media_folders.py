@@ -37,15 +37,15 @@ class Command(BaseCommand):
 
         if not folders.exists():
             if folder_filter:
-                self.stdout.write(self.style_error(f"❌ No active folder found with name: {folder_filter}"))
+                self.stdout.write(self.style_error(f"ERROR: No active folder found with name: {folder_filter}"))
             else:
-                self.stdout.write(self.style_error("❌ No active media folders configured"))
-                self.stdout.write("💡 Use 'python manage.py add_media_folder' to add some")
+                self.stdout.write(self.style_error("ERROR: No active media folders configured"))
+                self.stdout.write("TIP: Use 'python manage.py add_media_folder' to add some")
             return
 
-        self.stdout.write(f"🔍 Scanning {folders.count()} media folder(s)...")
+        self.stdout.write(f">> Scanning {folders.count()} media folder(s)...")
         if dry_run:
-            self.stdout.write(self.style_warning("🧪 DRY RUN MODE"))
+            self.stdout.write(self.style_warning("*** DRY RUN MODE ***"))
 
         total_found = 0
         total_imported = 0
@@ -55,12 +55,12 @@ class Command(BaseCommand):
         all_valid_paths = set()
 
         for folder in folders:
-            self.stdout.write(f"\n📁 Processing: {folder.name}")
+            self.stdout.write(f"\n[FOLDER] Processing: {folder.name}")
             self.stdout.write(f"   Path: {folder.path}")
             
             folder_path = Path(folder.path)
             if not folder.path_exists():
-                self.stdout.write(self.style_error(f"   ❌ Path no longer exists: {folder.path}"))
+                self.stdout.write(self.style_error(f"   ERROR: Path no longer exists: {folder.path}"))
                 continue
 
             # Find video files in this folder
@@ -74,43 +74,44 @@ class Command(BaseCommand):
 
             folder_count = len(video_files)
             total_found += folder_count
-            self.stdout.write(f"   🎬 Found: {folder_count} videos")
+            self.stdout.write(f"   Videos found: {folder_count}")
 
             if dry_run:
                 for video_path in sorted(video_files):
-                    self.stdout.write(f"   📽️  Would scan: {video_path.name}")
+                    self.stdout.write(f"   -> Would scan: {video_path.name}")
             else:
                 # Import videos from this folder
                 imported, skipped = self.import_folder_videos(video_files)
                 total_imported += imported
                 total_skipped += skipped
-                self.stdout.write(f"   ✅ Imported: {imported}, Skipped: {skipped}")
+                self.stdout.write(f"   Result: Imported {imported}, Skipped {skipped}")
 
         # Remove stale videos (only if not dry run)
         if not dry_run and all_valid_paths:
             self.remove_stale_videos(all_valid_paths)
 
         # Summary
-        self.stdout.write(f"\n📊 Summary:")
-        self.stdout.write(f"   🎬 Total found: {total_found}")
+        self.stdout.write(f"\n[SUMMARY]")
+        self.stdout.write(f"   Total found: {total_found}")
         if not dry_run:
-            self.stdout.write(f"   ✅ Imported: {total_imported}")
-            self.stdout.write(f"   ⏩ Skipped: {total_skipped}")
+            self.stdout.write(f"   Imported: {total_imported}")
+            self.stdout.write(f"   Skipped: {total_skipped}")
 
         # Run processing pipeline if requested
         if process and not dry_run:
-            self.stdout.write(f"\n🚀 Running processing pipeline...")
+            self.stdout.write(f"\n>> Running processing pipeline...")
             
             # Check what needs processing
             from VideoSearch.models import Clip, Keyframe
             videos_needing_processing = self.check_processing_status()
             
             if videos_needing_processing['total'] > 0:
-                self.stdout.write(f"📊 Processing status:")
-                self.stdout.write(f"   🎬 Videos without web proxies: {videos_needing_processing['no_web_proxy']}")
-                self.stdout.write(f"   ✂️  Videos without clips: {videos_needing_processing['no_clips']}")
-                self.stdout.write(f"   🖼️  Videos without keyframes: {videos_needing_processing['no_keyframes']}")
-                self.stdout.write(f"   🎯 Videos without objects: {videos_needing_processing['no_objects']}")
+                self.stdout.write(f"[PROCESSING STATUS]")
+                self.stdout.write(f"   Videos without web proxies: {videos_needing_processing['no_web_proxy']}")
+                self.stdout.write(f"   Videos without clips: {videos_needing_processing['no_clips']}")
+                self.stdout.write(f"   Videos without keyframes: {videos_needing_processing['no_keyframes']}")
+                self.stdout.write(f"   Videos without transcripts: {videos_needing_processing['no_transcripts']}")
+                self.stdout.write(f"   Videos without objects: {videos_needing_processing['no_objects']}")
                 
                 # Run processing steps directly (skip import_videos since we just imported)
                 from multiprocessing import cpu_count
@@ -118,15 +119,15 @@ class Command(BaseCommand):
                 worker_keyframes = min(1, cpu_count())
                 
                 if videos_needing_processing['no_web_proxy'] > 0:
-                    self.stdout.write("=== Creating Web Proxies ===")
+                    self.stdout.write(">> Creating Web Proxies...")
                     call_command("create_web_videos", max_height=480, quality=18)
 
                 if videos_needing_processing['no_clips'] > 0:
-                    self.stdout.write("=== Extracting Clips ===")
+                    self.stdout.write(">> Extracting Clips...")
                     call_command("extract_clips", workers=worker_clip)
 
                 if videos_needing_processing['no_keyframes'] > 0:
-                    self.stdout.write("=== Extracting Keyframes ===")
+                    self.stdout.write(">> Extracting Keyframes...")
                     import torch
                     keyframe_kwargs = {
                         "search_range_factor": 0.95 if torch.cuda.is_available() else 0.5,
@@ -135,18 +136,22 @@ class Command(BaseCommand):
                     }
                     call_command("extract_keyframes", **keyframe_kwargs)
 
+                if videos_needing_processing['no_transcripts'] > 0:
+                    self.stdout.write(">> Extracting Audio Transcripts...")
+                    call_command("extract_audio_transcripts", model_size="base", context_window=5.0)
+
                 if videos_needing_processing['no_objects'] > 0:
-                    self.stdout.write("=== Extracting Objects ===")
+                    self.stdout.write(">> Extracting Objects...")
                     call_command("extract_objects", batch_size=4)
 
-                self.stdout.write("🎉 Complete processing finished!")
+                self.stdout.write("COMPLETE: Processing finished!")
             else:
-                self.stdout.write("✅ All videos are already fully processed!")
+                self.stdout.write("OK: All videos are already fully processed!")
 
         if dry_run:
-            self.stdout.write(f"\n💡 Run without --dry-run to actually import videos")
+            self.stdout.write(f"\nTIP: Run without --dry-run to actually import videos")
         elif not process:
-            self.stdout.write(f"\n💡 Processing was skipped (use without --no-process to enable)")
+            self.stdout.write(f"\nTIP: Processing was skipped (use without --no-process to enable)")
 
     def check_processing_status(self):
         """Check which videos need processing"""
@@ -158,6 +163,7 @@ class Command(BaseCommand):
         no_web_proxy = 0
         no_clips = 0  
         no_keyframes = 0
+        no_transcripts = 0
         no_objects = 0
         
         for video in all_videos:
@@ -179,21 +185,31 @@ class Command(BaseCommand):
                 if clips_with_keyframes < total_clips:
                     no_keyframes += 1
                 else:
-                    # Check objects (only for videos with keyframes)
-                    keyframes_with_objects = Keyframe.objects.filter(
+                    # Check transcripts (only for videos with keyframes)
+                    keyframes_with_transcripts = Keyframe.objects.filter(
                         clip__video=video,
-                        object_vector__isnull=False
+                        transcript_text__isnull=False
                     ).count()
                     total_keyframes = Keyframe.objects.filter(clip__video=video).count()
                     
-                    if keyframes_with_objects < total_keyframes:
-                        no_objects += 1
+                    if keyframes_with_transcripts < total_keyframes:
+                        no_transcripts += 1
+                    else:
+                        # Check objects (only for videos with transcripts)
+                        keyframes_with_objects = Keyframe.objects.filter(
+                            clip__video=video,
+                            object_vector__isnull=False
+                        ).count()
+                        
+                        if keyframes_with_objects < total_keyframes:
+                            no_objects += 1
         
         return {
-            'total': no_web_proxy + no_clips + no_keyframes + no_objects,
+            'total': no_web_proxy + no_clips + no_keyframes + no_transcripts + no_objects,
             'no_web_proxy': no_web_proxy,
             'no_clips': no_clips,
             'no_keyframes': no_keyframes,
+            'no_transcripts': no_transcripts,
             'no_objects': no_objects
         }
 
@@ -226,7 +242,7 @@ class Command(BaseCommand):
                     skipped += 1
 
             except Exception as e:
-                self.stdout.write(self.style_error(f"   ❌ Error importing {video_path.name}: {e}"))
+                self.stdout.write(self.style_error(f"   ERROR: Error importing {video_path.name}: {e}"))
                 skipped += 1
 
         return imported, skipped
@@ -238,12 +254,12 @@ class Command(BaseCommand):
         
         for video in db_videos:
             if str(Path(video.file_path).resolve()) not in valid_paths:
-                self.stdout.write(f"🗑️  Removing stale video: {Path(video.file_path).name}")
+                self.stdout.write(f"   Removing stale video: {Path(video.file_path).name}")
                 video.delete()  # Cascade deletion handles web proxies
                 removed_count += 1
         
         if removed_count > 0:
-            self.stdout.write(f"🧹 Removed {removed_count} stale video(s)")
+            self.stdout.write(f"CLEANUP: Removed {removed_count} stale video(s)")
 
     def get_video_metadata(self, video_path):
         """Extract video metadata using ffprobe"""

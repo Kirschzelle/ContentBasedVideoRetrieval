@@ -70,14 +70,14 @@ class Command(BaseCommand):
                 output_path = output_dir / f"{input_path.stem}.mp4"
             
             if output_path.exists() and not force:
-                self.stdout.write(f"⏩ Skipping {input_path.name} (already exists)")
+                self.stdout.write(f"SKIP: {input_path.name} (already exists)")
                 continue
 
             if not input_path.exists():
-                self.stdout.write(self.style_error(f"❌ Source file not found: {input_path}"))
+                self.stdout.write(self.style_error(f"ERROR: Source file not found: {input_path}"))
                 continue
 
-            self.stdout.write(f"🔄 Processing {input_path.name}...")
+            self.stdout.write(f">> Processing {input_path.name}...")
             
             # Get input file size
             input_size = input_path.stat().st_size
@@ -124,7 +124,7 @@ class Command(BaseCommand):
                 
                 self.stdout.write(
                     self.style_success(
-                        f"✅ {input_path.name} → {output_path.name} "
+                        f"DONE: {input_path.name} -> {output_path.name} "
                         f"({input_mb:.1f}MB → {output_mb:.1f}MB, {compression_ratio:.1f}% smaller)"
                     )
                 )
@@ -157,12 +157,12 @@ class Command(BaseCommand):
         total_after_gb = total_size_after / (1024**3)
         total_saved = (1 - total_size_after/total_size_before) * 100 if total_size_before > 0 else 0
         
-        self.stdout.write(self.style_success("\n🎉 Conversion completed!"))
-        self.stdout.write(f"💾 Total size: {total_before_gb:.2f}GB → {total_after_gb:.2f}GB ({total_saved:.1f}% saved)")
+        self.stdout.write(self.style_success("\nCOMPLETE: Conversion finished!"))
+        self.stdout.write(f"STATS: Total size: {total_before_gb:.2f}GB -> {total_after_gb:.2f}GB ({total_saved:.1f}% saved)")
         
         if replace_originals:
-            self.stdout.write("🔄 Original files replaced with web-optimized versions")
+            self.stdout.write("INFO: Original files replaced with web-optimized versions")
         else:
-            self.stdout.write(f"📁 Web videos saved to: {output_dir.resolve()}")
+            self.stdout.write(f"OUTPUT: Web videos saved to: {output_dir.resolve()}")
             
-        self.stdout.write("🌐 Videos are now web-compatible and will play in browsers!")
+        self.stdout.write("SUCCESS: Videos are now web-compatible and will play in browsers!")

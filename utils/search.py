@@ -26,7 +26,8 @@ class Searcher:
             kf.id: kf for kf in Keyframe.objects.select_related("clip", "clip__video")
             .only("id", "clip__video__id", "clip__id", "frame",
                   "embedding_clip", "embedding_dino", "histogram_hsv",
-                  "dominant_colors", "colorfulness", "object_vector")
+                  "dominant_colors", "colorfulness", "object_vector",
+                  "transcript_text", "transcript_confidence", "transcript_context")
         }
 
         self.clip_index, self.id_map = build_annoy_index(
@@ -83,7 +84,12 @@ class Searcher:
 
         # Convert Annoy indices to keyframe IDs
         clip_keyframe_ids = set(self.id_map[i] for i in clip_ids)
-        all_candidate_ids = clip_keyframe_ids | filter_ids
+        
+        # Add transcript search results
+        transcript_ids = self._search_transcripts(query, threshold=0.3)
+        
+        # Combine all candidate IDs
+        all_candidate_ids = clip_keyframe_ids | filter_ids | transcript_ids
         all_candidate_ids.difference_update(returned_ids)
 
         scored = []
@@ -91,7 +97,7 @@ class Searcher:
             kf = self.kf_lookup.get(kf_id)
             if not kf:
                 continue
-            score = self.compute_total_similarity(query_embedding, kf, filters)
+            score = self.compute_total_similarity(query_embedding, kf, filters, query)
             if score is not None:
                 scored.append((score, kf))
 
@@ -99,7 +105,92 @@ class Searcher:
         pruned = prune_similar_results([s[1] for s in scored])
         return pruned[:top_k]
 
-    def compute_total_similarity(self, query_embedding, candidate_kf, filters):
+    def _search_transcripts(self, query: str, threshold: float = 0.3) -> set:
+        """
+        Search for keyframes with matching transcript text.
+        
+        Args:
+            query: Search query string
+            threshold: Minimum confidence threshold for transcript matches
+            
+        Returns:
+            Set of keyframe IDs with matching transcripts
+        """
+        matching_ids = set()
+        query_words = set(query.lower().split())
+        
+        if not query_words:
+            return matching_ids
+            
+        for kf_id, kf in self.kf_lookup.items():
+            # Skip keyframes without transcript data
+            if not kf.transcript_text or not kf.transcript_text.strip():
+                continue
+                
+            # Skip low-confidence transcripts
+            if kf.transcript_confidence is not None and kf.transcript_confidence < threshold:
+                continue
+                
+            # Check primary transcript text
+            transcript_words = set(kf.transcript_text.lower().split())
+            if query_words.intersection(transcript_words):
+                matching_ids.add(kf_id)
+                continue
+                
+            # Also check context text for broader matches
+            if kf.transcript_context and kf.transcript_context.strip():
+                context_words = set(kf.transcript_context.lower().split())
+                if query_words.intersection(context_words):
+                    matching_ids.add(kf_id)
+        
+        return matching_ids
+    
+    def _compute_transcript_similarity(self, query: str, candidate_features: dict) -> float:
+        """
+        Compute transcript similarity score for a candidate keyframe.
+        
+        Args:
+            query: Search query string
+            candidate_features: Keyframe features including transcript data
+            
+        Returns:
+            Similarity score (lower is better, 0.0 = perfect match)
+        """
+        transcript_data = candidate_features.get("transcript", {})
+        if not transcript_data:
+            return 1.0  # No transcript data - neutral score
+            
+        primary_text = transcript_data.get("text", "")
+        confidence = transcript_data.get("confidence", 0.0)
+        context_text = transcript_data.get("context", "")
+        
+        if not primary_text or not primary_text.strip():
+            return 1.0  # No transcript text
+            
+        query_words = set(query.lower().split())
+        if not query_words:
+            return 1.0
+            
+        # Primary text matching (higher weight)
+        primary_words = set(primary_text.lower().split())
+        primary_matches = len(query_words.intersection(primary_words))
+        primary_score = primary_matches / len(query_words) if query_words else 0.0
+        
+        # Context text matching (lower weight)
+        context_score = 0.0
+        if context_text and context_text.strip():
+            context_words = set(context_text.lower().split())
+            context_matches = len(query_words.intersection(context_words))
+            context_score = context_matches / len(query_words) if query_words else 0.0
+        
+        # Combine scores with confidence weighting
+        confidence_weight = max(0.3, confidence) if confidence else 0.3
+        combined_score = (0.8 * primary_score + 0.2 * context_score) * confidence_weight
+        
+        # Convert to distance (0.0 = perfect match, 1.0 = no match)
+        return 1.0 - combined_score
+
+    def compute_total_similarity(self, query_embedding, candidate_kf, filters, query_text=None):
         candidate_features = candidate_kf.get_features_from_keyframe()
 
         clip_score = self._compute_clip_similarity(query_embedding, candidate_features)
@@ -110,11 +201,18 @@ class Searcher:
         if object_score is None:
             return None
 
+        # Add transcript similarity if we have the query text
+        transcript_score = None
+        if query_text:
+            transcript_score = self._compute_transcript_similarity(query_text, candidate_features)
+
         filter_scores = self._compute_filter_distances(candidate_features, filters)
 
         distances = [clip_score] + filter_scores
         if object_score is not None:
             distances.insert(1, object_score)
+        if transcript_score is not None:
+            distances.append(transcript_score)
         #alpha = compute_adaptive_alpha(len(distances))
         return nonlinear_pooling(distances, 1)
 
