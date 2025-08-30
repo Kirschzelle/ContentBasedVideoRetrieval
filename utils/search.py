@@ -81,7 +81,9 @@ class Searcher:
                         obj_ids = self.object_index.get_nns_by_vector(obj_vec, 1000)
                         filter_ids.update(self.object_id_map[i] for i in obj_ids)
 
-        all_candidate_ids = set(clip_ids) | filter_ids
+        # Convert Annoy indices to keyframe IDs
+        clip_keyframe_ids = set(self.id_map[i] for i in clip_ids)
+        all_candidate_ids = clip_keyframe_ids | filter_ids
         all_candidate_ids.difference_update(returned_ids)
 
         scored = []

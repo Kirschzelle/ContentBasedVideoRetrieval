@@ -28,11 +28,6 @@ class Video(models.Model):
     def file_name(self):
         return Path(self.file_path).stem
     
-    @property
-    def fps(self) -> float:
-        """Return the frames per second as a float."""
-        return self.fps_num / self.fps_den if self.fps_den else 1.0
-
     def save(self, *args, **kwargs):
         self.file_path = str(Path(self.file_path).resolve())
         super().save(*args, **kwargs)
@@ -54,7 +49,7 @@ class Video(models.Model):
         Extract a frame using ffmpeg instead of OpenCV.
         This method is more robust for corrupted or complex videos.
         """
-        fps = self.frame_rate
+        fps = self.fps()
         time_sec = frame_index / fps
 
         command = [
@@ -86,7 +81,7 @@ class Video(models.Model):
         if start_frame < 0 or end_frame >= self.frame_count or end_frame < start_frame:
             return []
 
-        fps = self.frame_rate
+        fps = self.fps()
         with tempfile.TemporaryDirectory() as tmpdir:
             out_pattern = Path(tmpdir) / "frame_%05d.png"
             cmd = [
@@ -115,7 +110,7 @@ class Video(models.Model):
         Extracts selected frames using ffmpeg by seeking to each one individually.
         """
         images = {}
-        fps = self.frame_rate
+        fps = self.fps()
 
         for frame_index in sorted(set(frame_numbers)):
             time_sec = frame_index / fps
@@ -138,10 +133,6 @@ class Video(models.Model):
                 images[frame_index] = None
 
         return [images.get(f) for f in frame_numbers]
-
-    def media_url(self):
-        rel_path = os.path.relpath(self.file_path, settings.MEDIA_ROOT)
-        return f"{settings.MEDIA_URL}{rel_path.replace(os.sep, '/')}"
     
     def __str__(self):
         return f"Video {self.id}: {self.file_path} ({self.resolution}, {self.fps_num}/{self.fps_den}, {self.frame_count}f)"

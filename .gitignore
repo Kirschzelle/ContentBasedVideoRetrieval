@@ -3,6 +3,9 @@ data/*
 .vs
 yolov8x.pt
 
+.claude
+CLAUDE.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

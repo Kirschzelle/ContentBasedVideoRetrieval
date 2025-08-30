@@ -52,13 +52,14 @@ class Command(BaseCommand):
 
         if num_workers == 1:
             # Run sequentially (no Pool)
-            results = [process_video_for_clips(vid, kwargs) for vid in video_ids]
+            for vid in video_ids:
+                result = process_video_for_clips(vid, kwargs)
+                self.stdout.write(self.style_success(result))
         else:
             with Pool(processes=num_workers) as pool:
                 results = pool.map(partial(process_video_for_clips, kwargs=kwargs), video_ids)
-
-        for msg in results:
-            self.stdout.write(self.style_success(msg))
+            for msg in results:
+                self.stdout.write(self.style_success(msg))
 
 def process_video_for_clips(video_id, kwargs):
     import os

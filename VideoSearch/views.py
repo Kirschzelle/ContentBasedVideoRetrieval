@@ -14,11 +14,8 @@ _searcher_instance = None
 def get_searcher():
     global _searcher_instance
 
-    if _searcher_instance is None and (
-            "runserver" in sys.argv or
-            "runserver_plus" in sys.argv
-        ) and os.environ.get("RUN_MAIN") == "true":
-            _searcher_instance = Searcher()
+    if _searcher_instance is None:
+        _searcher_instance = Searcher()
     return _searcher_instance
 
 # Create your views here.
