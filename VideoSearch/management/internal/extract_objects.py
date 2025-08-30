@@ -4,7 +4,7 @@ from VideoSearch.utils.objects import ObjectDetector
 import numpy as np
 
 class Command(BaseCommand):
-    help = "Extract YOLO object vectors for keyframes missing them."
+    pass
 
     def add_arguments(self, parser):
         parser.add_argument(

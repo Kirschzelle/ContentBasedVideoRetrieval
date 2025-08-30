@@ -5,7 +5,7 @@ import subprocess
 import os
 
 class Command(BaseCommand):
-    help = "Create web-optimized MP4 proxies for all videos with cascade deletion support."
+    pass
 
     def add_arguments(self, parser):
         parser.add_argument(

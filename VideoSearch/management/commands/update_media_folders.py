@@ -120,29 +120,39 @@ class Command(BaseCommand):
                 
                 if videos_needing_processing['no_web_proxy'] > 0:
                     self.stdout.write(">> Creating Web Proxies...")
-                    call_command("create_web_videos", max_height=480, quality=18)
+                    from VideoSearch.management.internal.create_web_videos import Command as CreateWebVideosCommand
+                    cmd = CreateWebVideosCommand()
+                    cmd.handle(max_height=480, quality=18)
 
                 if videos_needing_processing['no_clips'] > 0:
                     self.stdout.write(">> Extracting Clips...")
-                    call_command("extract_clips", workers=worker_clip)
+                    from VideoSearch.management.internal.extract_clips import Command as ExtractClipsCommand
+                    cmd = ExtractClipsCommand()
+                    cmd.handle(workers=worker_clip)
 
                 if videos_needing_processing['no_keyframes'] > 0:
                     self.stdout.write(">> Extracting Keyframes...")
                     import torch
+                    from VideoSearch.management.internal.extract_keyframes import Command as ExtractKeyframesCommand
+                    cmd = ExtractKeyframesCommand()
                     keyframe_kwargs = {
                         "search_range_factor": 0.95 if torch.cuda.is_available() else 0.5,
                         "frames_to_compare": 50 if torch.cuda.is_available() else 5,
                         "workers": worker_keyframes
                     }
-                    call_command("extract_keyframes", **keyframe_kwargs)
+                    cmd.handle(**keyframe_kwargs)
 
                 if videos_needing_processing['no_transcripts'] > 0:
                     self.stdout.write(">> Extracting Audio Transcripts...")
-                    call_command("extract_audio_transcripts", model_size="base", context_window=5.0)
+                    from VideoSearch.management.internal.extract_audio_transcripts import Command as ExtractAudioTranscriptsCommand
+                    cmd = ExtractAudioTranscriptsCommand()
+                    cmd.handle(model_size="base", context_window=5.0)
 
                 if videos_needing_processing['no_objects'] > 0:
                     self.stdout.write(">> Extracting Objects...")
-                    call_command("extract_objects", batch_size=4)
+                    from VideoSearch.management.internal.extract_objects import Command as ExtractObjectsCommand
+                    cmd = ExtractObjectsCommand()
+                    cmd.handle(batch_size=4)
 
                 self.stdout.write("COMPLETE: Processing finished!")
             else:

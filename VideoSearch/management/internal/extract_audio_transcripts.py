@@ -5,7 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 
 class Command(BaseCommand):
-    help = "Extract audio transcripts for keyframes missing them."
+    pass
 
     def add_arguments(self, parser):
         parser.add_argument(

@@ -5,7 +5,7 @@ from multiprocessing import Pool
 feature_extractor = None
 
 class Command(BaseCommand):
-    help = "Extract keyframes from newly extracted clips."
+    pass
 
     def add_arguments(self, parser):
         parser.add_argument('--threshold', type=float, default=0.35, help='Distance threshold for keyframe uniqueness.')

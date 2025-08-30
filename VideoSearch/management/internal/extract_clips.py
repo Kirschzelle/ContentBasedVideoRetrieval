@@ -14,7 +14,7 @@ DEFAULT_CLIP_EXTRACTION_SETTINGS = {
 }
 
 class Command(BaseCommand):
-    help = "Extract clips from all videos and store them in the database.\nA clip is defined as a single Video sequence with no cuts within it."
+    pass
 
     def add_arguments(self, parser):
         parser.add_argument('--workers', type=int, default=4, help='Number of worker processes (1 disables multiprocessing).')
