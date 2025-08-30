@@ -2,12 +2,16 @@ from asyncio.windows_events import INFINITE
 import time
 import torch
 import numpy as np
+import logging
 from transformers import CLIPTokenizer, CLIPModel
 from VideoSearch.models import Keyframe
 from VideoSearch.utils.hardware import EmbeddingModelSelector
 from VideoSearch.utils.visual_feature_extractor import compute_distance, nonlinear_pooling
 import utils.filters as ufil
 from utils.annoy_index import build_annoy_index
+from VideoSearch.utils.combined_embeddings import get_combined_vector_builder
+
+logger = logging.getLogger(__name__)
 
 class Searcher:
     def __init__(self):
@@ -55,47 +59,126 @@ class Searcher:
             kf_lookup=self.kf_lookup
         )
 
+        # Build combined index for primary search
+        self._build_combined_index()
+
+    def _build_combined_index(self):
+        """Build combined vector index for multi-modal search."""
+        from annoy import AnnoyIndex
+        
+        try:
+            builder = get_combined_vector_builder()
+            
+            # Determine dimensions from first valid keyframe
+            sample_features = None
+            for kf in list(self.kf_lookup.values())[:10]:  # Check first 10
+                features = kf.get_features_from_keyframe()
+                if features.get('clip_emb') is not None:
+                    sample_features = features
+                    break
+                    
+            if sample_features is None:
+                logger.warning("No valid keyframes found for combined index")
+                self.combined_index = None
+                self.combined_id_map = {}
+                return
+                
+            # Get combined vector dimensions
+            sample_combined = builder.build_combined_vector(sample_features)
+            combined_dim = len(sample_combined)
+            
+            # Build combined index
+            self.combined_index = AnnoyIndex(combined_dim, "angular")
+            self.combined_id_map = {}
+            
+            i = 0
+            for kf_id, kf in self.kf_lookup.items():
+                features = kf.get_features_from_keyframe()
+                
+                # Skip keyframes without clip embeddings (required)
+                if features.get('clip_emb') is None:
+                    continue
+                    
+                try:
+                    combined_vec = builder.build_combined_vector(features)
+                    if np.linalg.norm(combined_vec) > 0:
+                        self.combined_index.add_item(i, combined_vec)
+                        self.combined_id_map[i] = kf_id
+                        i += 1
+                except Exception as e:
+                    logger.warning(f"Failed to build combined vector for keyframe {kf_id}: {e}")
+                    continue
+            
+            if i > 0:
+                self.combined_index.build(700)  # Build with 700 trees
+                logger.info(f"Built combined index with {i} vectors, dimension {combined_dim}")
+            else:
+                logger.warning("No valid combined vectors, combined search disabled")
+                self.combined_index = None
+                
+        except Exception as e:
+            logger.error(f"Failed to build combined index: {e}")
+            self.combined_index = None
+            self.combined_id_map = {}
+
     def search_incremental(self, query: str, returned_ids=None, filters=None, top_k=5):
         if returned_ids is None:
             returned_ids = set()
         if filters is None:
             filters = {}
 
-        query_embedding = self.encode_text(query)
+        # PHASE 1: Get candidates using combined search with filter awareness
+        if self.combined_index is not None:
+            # Use combined vector search with filters integrated
+            combined_candidates = self._search_combined_vectors(query, filters)
+        else:
+            # Fallback to individual index search (original approach)
+            query_embedding = self.encode_text(query)
+            clip_ids = self.clip_index.get_nns_by_vector(query_embedding, 5000)
+            combined_candidates = set(self.id_map[i] for i in clip_ids)
+            
+            # Add transcript search results
+            transcript_ids_embedding = self._search_transcript_embeddings(query)
+            transcript_ids_text = self._search_transcripts(query, threshold=0.3)
+            combined_candidates = combined_candidates | transcript_ids_embedding | transcript_ids_text
 
-        clip_ids = self.clip_index.get_nns_by_vector(query_embedding, 5000)
-        filter_ids = set()
+        # PHASE 2: Apply filter refinement using individual indices for additional precision
+        if filters:
+            filter_ids = set()
+            for kf, categories in filters.items():
+                filter_kf = self.kf_lookup.get(kf)
+                if not filter_kf:
+                    continue
+                    
+                filter_feats = filter_kf.get_features_from_keyframe()
 
-        for kf, categories in filters.items():
-            filter_kf = self.kf_lookup.get(kf)
-            filter_feats = filter_kf.get_features_from_keyframe()
-
-            for category in categories:
-                if category == "embeddings":
-                    emb = filter_feats.get("dino_emb")
-                    if emb is not None:
-                        dino_ids = self.dino_index.get_nns_by_vector(emb, 1000)
-                        filter_ids.update(self.dino_id_map[i] for i in dino_ids)
-                elif category == "colors":
-                    hist = filter_feats.get("histogram")
-                    if hist is not None:
-                        color_ids = self.color_index.get_nns_by_vector(hist, 1000)
-                        filter_ids.update(self.color_id_map[i] for i in color_ids)
-                elif category == "objects":
-                    obj_vec = filter_feats.get("object_vector")
-                    if obj_vec is not None:
-                        obj_ids = self.object_index.get_nns_by_vector(obj_vec, 1000)
-                        filter_ids.update(self.object_id_map[i] for i in obj_ids)
-
-        # Convert Annoy indices to keyframe IDs
-        clip_keyframe_ids = set(self.id_map[i] for i in clip_ids)
-        
-        # Add transcript search results (both embedding and text-based)
-        transcript_ids_embedding = self._search_transcript_embeddings(query)
-        transcript_ids_text = self._search_transcripts(query, threshold=0.3)
-        
-        # Combine all candidate IDs
-        all_candidate_ids = clip_keyframe_ids | filter_ids | transcript_ids_embedding | transcript_ids_text
+                for category in categories:
+                    if category == "embeddings":
+                        emb = filter_feats.get("dino_emb")
+                        if emb is not None:
+                            dino_ids = self.dino_index.get_nns_by_vector(emb, 1000)
+                            filter_ids.update(self.dino_id_map[i] for i in dino_ids)
+                    elif category == "colors":
+                        hist = filter_feats.get("histogram")
+                        if hist is not None:
+                            color_ids = self.color_index.get_nns_by_vector(hist, 1000)
+                            filter_ids.update(self.color_id_map[i] for i in color_ids)
+                    elif category == "objects":
+                        obj_vec = filter_feats.get("object_vector")
+                        if obj_vec is not None:
+                            obj_ids = self.object_index.get_nns_by_vector(obj_vec, 1000)
+                            filter_ids.update(self.object_id_map[i] for i in obj_ids)
+                    elif category == "transcripts":
+                        transcript_emb = filter_feats.get("transcript_embedding")
+                        if transcript_emb is not None:
+                            transcript_ids = self.transcript_index.get_nns_by_vector(transcript_emb, 1000)
+                            filter_ids.update(self.transcript_id_map[i] for i in transcript_ids)
+            
+            # Intersect combined candidates with filter results for better precision
+            all_candidate_ids = combined_candidates.intersection(filter_ids) if filter_ids else combined_candidates
+        else:
+            all_candidate_ids = combined_candidates
+            
         all_candidate_ids.difference_update(returned_ids)
 
         scored = []
@@ -103,7 +186,14 @@ class Searcher:
             kf = self.kf_lookup.get(kf_id)
             if not kf:
                 continue
-            score = self.compute_total_similarity(query_embedding, kf, filters, query)
+                
+            # Always use combined scoring when combined index available
+            if self.combined_index is not None:
+                score = self._compute_combined_similarity(query, kf)
+            else:
+                query_embedding = self.encode_text(query) if 'query_embedding' not in locals() else query_embedding
+                score = self.compute_total_similarity(query_embedding, kf, filters, query)
+                
             if score is not None:
                 scored.append((score, kf))
 
@@ -183,6 +273,99 @@ class Searcher:
             # Fallback gracefully if embeddings not available
             return set()
     
+    def _extract_filter_vectors(self, filters: dict) -> dict:
+        """
+        Extract filter vectors from filter parameters for combined vector search.
+        
+        Args:
+            filters: Dictionary of filter keyframe IDs to categories
+            
+        Returns:
+            Dictionary of filter vectors to append to combined vectors
+        """
+        filter_vectors = {}
+        
+        for kf_id, categories in filters.items():
+            filter_kf = self.kf_lookup.get(kf_id)
+            if not filter_kf:
+                continue
+                
+            filter_feats = filter_kf.get_features_from_keyframe()
+            
+            for category in categories:
+                if category == "embeddings":
+                    emb = filter_feats.get("dino_emb")
+                    if emb is not None:
+                        filter_vectors["embedding_filter"] = emb
+                elif category == "colors":
+                    hist = filter_feats.get("histogram")
+                    if hist is not None:
+                        filter_vectors["color_filter"] = hist
+                elif category == "objects":
+                    obj_vec = filter_feats.get("object_vector")
+                    if obj_vec is not None:
+                        filter_vectors["object_filter"] = obj_vec
+                elif category == "transcripts":
+                    transcript_emb = filter_feats.get("transcript_embedding")
+                    if transcript_emb is not None:
+                        filter_vectors["transcript_filter"] = transcript_emb
+        
+        return filter_vectors if filter_vectors else None
+
+    def _search_combined_vectors(self, query: str, filters: dict = None) -> set:
+        """
+        Search using combined vector approach with optional filters.
+        
+        Args:
+            query: Search query string
+            filters: Optional filter parameters
+            
+        Returns:
+            Set of keyframe IDs from combined search
+        """
+        if not self.combined_index:
+            return set()
+            
+        try:
+            builder = get_combined_vector_builder()
+            
+            # Build combined query vector
+            query_embedding = self.encode_text(query)
+            
+            # Try to get transcript embedding for query
+            transcript_embedding = None
+            try:
+                from VideoSearch.utils.transcript_embeddings import get_transcript_embedder
+                embedder = get_transcript_embedder()
+                transcript_embedding = embedder.encode_text(query.strip())
+            except Exception:
+                pass  # OK to not have transcript embedding
+            
+            # Determine query type (could be made smarter)
+            query_type = 'balanced'  # Default
+            if any(word in query.lower() for word in ['said', 'says', 'talking', 'speak', 'voice']):
+                query_type = 'text'
+            elif any(word in query.lower() for word in ['color', 'bright', 'dark', 'scene']):
+                query_type = 'visual'
+            
+            # Extract filter vectors if filters provided
+            filter_vectors = self._extract_filter_vectors(filters) if filters else None
+                
+            # Build combined query vector with filter vectors
+            combined_query = builder.build_combined_query_vector(
+                query_embedding, transcript_embedding, query_type, filter_vectors
+            )
+            
+            # Search combined index
+            combined_annoy_ids = self.combined_index.get_nns_by_vector(combined_query, 2000)
+            combined_keyframe_ids = set(self.combined_id_map[i] for i in combined_annoy_ids)
+            
+            return combined_keyframe_ids
+            
+        except Exception as e:
+            logger.warning(f"Combined search failed, falling back to individual indices: {e}")
+            return set()
+    
     def _compute_transcript_similarity(self, query: str, candidate_features: dict) -> float:
         """
         Compute transcript similarity score for a candidate keyframe.
@@ -248,6 +431,40 @@ class Searcher:
         
         # Convert to distance (0.0 = perfect match, 1.0 = no match)
         return 1.0 - combined_score
+
+    def _compute_combined_similarity(self, query: str, candidate_kf) -> float:
+        """
+        Compute similarity using combined vector approach.
+        Since candidates came from combined search, we can use simpler scoring.
+        
+        Args:
+            query: Query string
+            candidate_kf: Candidate keyframe
+            
+        Returns:
+            Similarity score (lower is better)
+        """
+        try:
+            # For combined vector approach, we mainly rely on the Annoy ranking
+            # But we can add small adjustments based on confidence/quality
+            features = candidate_kf.get_features_from_keyframe()
+            
+            # Base score from Annoy ranking (we'll use a neutral score)
+            base_score = 0.5
+            
+            # Adjust for transcript confidence if available
+            transcript_data = features.get('transcript', {})
+            if transcript_data.get('text'):
+                confidence = transcript_data.get('confidence', 0.8)
+                if confidence is not None and confidence > 0.7:
+                    base_score *= 0.9  # Slight boost for high confidence
+                elif confidence is not None and confidence < 0.4:
+                    base_score *= 1.1  # Slight penalty for low confidence
+                    
+            return base_score
+            
+        except Exception:
+            return 0.5  # Neutral score if scoring fails
 
     def compute_total_similarity(self, query_embedding, candidate_kf, filters, query_text=None):
         candidate_features = candidate_kf.get_features_from_keyframe()

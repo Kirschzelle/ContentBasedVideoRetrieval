@@ -402,3 +402,219 @@ class Keyframe(models.Model):
         )
         keyframe.save_image()
         return keyframe
+
+# Analytics models for smart weighting system
+class SearchInteraction(models.Model):
+    """Track user search interactions for smart weighting system."""
+    
+    # Search context
+    query = models.TextField()
+    query_type = models.CharField(
+        max_length=20, 
+        choices=[('balanced', 'Balanced'), ('visual', 'Visual'), ('text', 'Text')],
+        default='balanced'
+    )
+    search_timestamp = models.DateTimeField(auto_now_add=True)
+    
+    # User context (optional for anonymous usage)
+    session_id = models.CharField(max_length=64, null=True, blank=True)
+    
+    # Search parameters 
+    had_filters = models.BooleanField(default=False)
+    filter_types = models.TextField(null=True, blank=True)  # JSON list of filter types used
+    
+    # Results and interaction
+    total_results_returned = models.IntegerField()
+    results_keyframe_ids = models.TextField()  # JSON list of returned keyframe IDs in order
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['search_timestamp']),
+            models.Index(fields=['query_type']),
+            models.Index(fields=['had_filters']),
+        ]
+
+class ResultEngagement(models.Model):
+    """Track detailed user engagement with search results."""
+    
+    search_interaction = models.ForeignKey(SearchInteraction, on_delete=models.CASCADE)
+    keyframe = models.ForeignKey(Keyframe, on_delete=models.CASCADE)
+    
+    # Basic interaction
+    result_position = models.IntegerField()  # 0-based position in search results
+    was_clicked = models.BooleanField(default=False)
+    click_timestamp = models.DateTimeField(null=True, blank=True)
+    time_to_click = models.FloatField(null=True, blank=True)  # Seconds from search to click
+    
+    # Engagement quality indicators
+    view_duration = models.FloatField(default=0.0)  # Total time spent viewing
+    hover_duration = models.FloatField(default=0.0)  # Time hovering over result
+    scroll_pauses = models.IntegerField(default=0)  # Times user paused scrolling on this result
+    
+    # Usage signals
+    video_played = models.BooleanField(default=False)
+    video_watch_duration = models.FloatField(default=0.0)  # Seconds of video watched
+    video_completion_rate = models.FloatField(default=0.0)  # 0.0-1.0, how much of clip was watched
+    
+    # Action signals (realistic for video search)
+    was_downloaded = models.BooleanField(default=False)  # Legacy field - will be replaced
+    was_shared = models.BooleanField(default=False)  # Legacy field - will be replaced
+    was_bookmarked = models.BooleanField(default=False)  # Legacy field - will be replaced
+    clip_copied = models.BooleanField(default=False)  # Copied timestamp/clip info
+    video_opened_fullscreen = models.BooleanField(default=False)  # Opened video in fullscreen
+    was_used_as_filter = models.BooleanField(default=False)  # Used to create new filter
+    video_scrubbed = models.BooleanField(default=False)  # User scrubbed through video timeline
+    related_searches_performed = models.IntegerField(default=0)  # Searches based on this result
+    
+    # Navigation signals
+    opened_in_new_tab = models.BooleanField(default=False)
+    returned_to_result = models.BooleanField(default=False)  # Came back to this result later
+    
+    # Final outcome
+    next_action = models.CharField(
+        max_length=25,
+        choices=[
+            ('new_search', 'New Search'),
+            ('refine_search', 'Refine Search'), 
+            ('apply_filter', 'Apply Filter'),
+            ('copy_clip', 'Copy Clip Info'),
+            ('open_fullscreen', 'Open Fullscreen'),
+            ('scrub_timeline', 'Scrub Timeline'),
+            ('related_search', 'Search for Similar'),
+            ('continue_browsing', 'Continue Browsing'),
+            ('exit', 'Exit')
+        ],
+        null=True, blank=True
+    )
+    
+    # Computed engagement score (updated when engagement data changes)
+    engagement_score = models.FloatField(default=0.0)  # 0.0-1.0 quality score
+    
+    def calculate_engagement_score(self) -> float:
+        """
+        Calculate engagement quality score based on multiple signals.
+        Returns score between 0.0 (poor engagement) and 1.0 (excellent engagement).
+        """
+        score = 0.0
+        
+        # Base click signal (weak positive signal)
+        if self.was_clicked:
+            score += 0.1
+            
+        # View time signals (strongest predictor)
+        if self.view_duration > 0:
+            if self.view_duration >= 30:  # 30+ seconds = very engaged
+                score += 0.4
+            elif self.view_duration >= 10:  # 10-30 seconds = moderately engaged  
+                score += 0.25
+            elif self.view_duration >= 3:   # 3-10 seconds = briefly engaged
+                score += 0.1
+                
+        # Video engagement (very strong signal)
+        if self.video_played:
+            score += 0.2
+            if self.video_completion_rate >= 0.8:  # Watched 80%+ of video
+                score += 0.3
+            elif self.video_completion_rate >= 0.5:  # Watched 50%+ of video
+                score += 0.2
+            elif self.video_completion_rate >= 0.2:  # Watched 20%+ of video
+                score += 0.1
+                
+        # Action signals (realistic for video search - strong positive indicators)
+        if self.clip_copied:
+            score += 0.25  # User found it useful enough to copy info
+        if self.video_opened_fullscreen:
+            score += 0.3  # Strong interest signal
+        if self.was_used_as_filter:
+            score += 0.35  # Very strong - user found it useful for further searching
+        if self.video_scrubbed:
+            score += 0.15  # Active exploration of content
+        if self.related_searches_performed > 0:
+            score += min(0.2, self.related_searches_performed * 0.05)  # Inspired follow-up searches
+            
+        # Attention signals
+        if self.hover_duration >= 2.0:  # Hovered for 2+ seconds
+            score += 0.1
+        if self.scroll_pauses >= 2:  # Paused scrolling multiple times
+            score += 0.05
+            
+        # Navigation signals
+        if self.opened_in_new_tab:
+            score += 0.15
+        if self.returned_to_result:
+            score += 0.1
+            
+        # Position bias correction (results lower in list need higher engagement)
+        position_penalty = min(0.1, self.result_position * 0.02)
+        score = max(0.0, score - position_penalty)
+        
+        # Quick exit penalty (clicked but immediately left)
+        if self.was_clicked and self.view_duration < 1.0 and not any([
+            self.video_played, self.clip_copied, self.video_opened_fullscreen, self.was_used_as_filter
+        ]):
+            score *= 0.3  # Heavily penalize quick exits
+            
+        return min(1.0, score)  # Cap at 1.0
+    
+    def save(self, *args, **kwargs):
+        """Update engagement score when saving."""
+        self.engagement_score = self.calculate_engagement_score()
+        super().save(*args, **kwargs)
+    
+    class Meta:
+        unique_together = ('search_interaction', 'keyframe')
+        indexes = [
+            models.Index(fields=['result_position']),
+            models.Index(fields=['engagement_score']),
+            models.Index(fields=['was_clicked']),
+            models.Index(fields=['video_played']),
+        ]
+
+class WeightingModel(models.Model):
+    """Store learned weighting parameters for different query types."""
+    
+    query_type = models.CharField(max_length=20, unique=True)
+    
+    # Core feature weights (learned from user interactions)
+    clip_weight = models.FloatField(default=1.0)
+    transcript_weight = models.FloatField(default=0.8) 
+    dino_weight = models.FloatField(default=0.6)
+    object_weight = models.FloatField(default=0.4)
+    histogram_weight = models.FloatField(default=0.3)
+    
+    # Metadata
+    training_samples = models.IntegerField(default=0)
+    last_updated = models.DateTimeField(auto_now=True)
+    model_version = models.CharField(max_length=20, default='1.0')
+    
+    # Performance metrics
+    click_through_rate = models.FloatField(null=True, blank=True)
+    average_engagement_score = models.FloatField(null=True, blank=True)  # 0.0-1.0, higher is better
+    high_engagement_rate = models.FloatField(null=True, blank=True)  # % of results with score > 0.5
+    video_completion_rate = models.FloatField(null=True, blank=True)  # Average video completion rate
+    average_result_position = models.FloatField(null=True, blank=True)  # Lower is better
+    
+    def get_weights_dict(self):
+        """Return weights as dictionary compatible with CombinedVectorBuilder."""
+        return {
+            'clip_emb': self.clip_weight,
+            'transcript_embedding': self.transcript_weight,
+            'dino_emb': self.dino_weight, 
+            'object_vector': self.object_weight,
+            'histogram': self.histogram_weight,
+        }
+    
+    def update_weights(self, new_weights: dict):
+        """Update weights from training results."""
+        self.clip_weight = new_weights.get('clip_emb', self.clip_weight)
+        self.transcript_weight = new_weights.get('transcript_embedding', self.transcript_weight)
+        self.dino_weight = new_weights.get('dino_emb', self.dino_weight)
+        self.object_weight = new_weights.get('object_vector', self.object_weight)
+        self.histogram_weight = new_weights.get('histogram', self.histogram_weight)
+        self.save()
+    
+    class Meta:
+        ordering = ['-last_updated']
+    
+    def __str__(self):
+        return f"WeightingModel({self.query_type}) - {self.training_samples} samples"
