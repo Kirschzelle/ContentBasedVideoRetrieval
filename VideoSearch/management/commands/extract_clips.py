@@ -72,7 +72,7 @@ def process_video_for_clips(video_id, kwargs):
     from pathlib import Path
 
     video = Video.objects.get(id=video_id)
-    path = Path(video.file_path)
+    path = Path(video.processing_path)
 
     existing_clips = Clip.objects.filter(video=video)
     if existing_clips.exists() and is_clip_coverage_complete(video):

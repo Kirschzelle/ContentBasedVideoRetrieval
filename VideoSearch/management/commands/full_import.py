@@ -20,6 +20,9 @@ class Command(BaseCommand):
         self.stdout.write(self.style_info("=== Importing Videos ==="))
         call_command("import_videos")
 
+        self.stdout.write(self.style_info("=== Creating Web Proxies ==="))
+        call_command("create_web_videos", max_height=480, quality=18)
+
         self.stdout.write(self.style_info("=== Extracting Clips ==="))
         call_command("extract_clips", workers=worker_clip)
 
@@ -32,7 +35,6 @@ class Command(BaseCommand):
         call_command("extract_keyframes", **keyframe_kwargs)
 
         self.stdout.write(self.style_info("=== Extracting Objects ==="))
-
         call_command("extract_objects", batch_size = 4)
 
         self.stdout.write(self.style_success("Full import completed."))

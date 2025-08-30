@@ -20,11 +20,9 @@
         <div class="clip-card preview-container video-preview" data-start-frame="{{ keyframe.frame }}" data-clip-start-frame="{{ keyframe.clip.start_frame }}" data-clip-end-frame="{{ keyframe.clip.end_frame }}" data-fps="{{ keyframe.clip.video.fps }}">
             <img src="{{ keyframe_img }}" alt="Keyframe" class="thumbnail">
             <video id="{{ keyframe.clip.video.id }}" alt="Video" class="preview-video" preload="auto" loop playsinline controls>
-                <source src="{{ keyframe.clip.video.media_url }}" type='video/quicktime; codecs="avc1.42E01E"'/>
-                <source src="{{ keyframe.clip.video.media_url }}" type="video/quicktime"/>
                 <source src="{{ keyframe.clip.video.media_url }}" type="video/mp4"/>
                 <source src="{{ keyframe.clip.video.media_url }}"/>
-                Your browser does not support the video tag or the video format.
+                Your browser does not support the video tag.
             </video>
         </div>
         <button id="submit" type="submit" class="submit-button" data-video-id="{{ keyframe.clip.video.file_name }}">Submit to the DRES Server</button>

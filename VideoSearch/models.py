@@ -12,25 +12,72 @@ import io
 
 KEYFRAME_ROOT = Path("data/keyframes")
 
+class MediaFolderSetting(models.Model):
+    """Store media folder configuration"""
+    name = models.CharField(max_length=100, unique=True, help_text="Descriptive name for this media folder")
+    path = models.CharField(max_length=500, help_text="Full path to the media folder")
+    recursive = models.BooleanField(default=True, help_text="Scan subdirectories recursively")
+    extensions = models.CharField(
+        max_length=200, 
+        default="mp4,mov,mkv,avi,wmv,flv,webm,m4v",
+        help_text="Comma-separated list of video file extensions"
+    )
+    is_active = models.BooleanField(default=True, help_text="Whether to include this folder in scans")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['name']
+    
+    def __str__(self):
+        return f"{self.name}: {self.path}"
+    
+    @property
+    def extension_list(self):
+        """Return extensions as a list"""
+        return [ext.strip().lower() for ext in self.extensions.split(',')]
+    
+    def path_exists(self):
+        """Check if the folder path exists"""
+        return Path(self.path).exists()
+
 class Video(models.Model):
     frame_count = models.IntegerField()
     fps_num = models.IntegerField()
     fps_den = models.IntegerField()
     resolution = models.CharField(max_length=50)
-    file_path = models.FilePathField(path="./data/videos/", max_length=500, unique=True)
+    file_path = models.FilePathField(max_length=500, unique=True)
+    web_path = models.FilePathField(path="./data/videos_web/", max_length=500, null=True, blank=True)
     
     @property
     def media_url(self):
-        relative_path = os.path.relpath(self.file_path, settings.MEDIA_ROOT)
+        # Use web_path if available, otherwise fallback to original
+        video_path = self.web_path if self.web_path and Path(self.web_path).exists() else self.file_path
+        relative_path = os.path.relpath(video_path, settings.MEDIA_ROOT)
         return settings.MEDIA_URL + relative_path.replace('\\', '/')
     
     @property
     def file_name(self):
         return Path(self.file_path).stem
     
+    @property
+    def processing_path(self):
+        """Return the best path for video processing (web proxy if available, otherwise original)"""
+        if self.web_path and Path(self.web_path).exists():
+            return self.web_path
+        return self.file_path
+    
     def save(self, *args, **kwargs):
         self.file_path = str(Path(self.file_path).resolve())
+        if self.web_path:
+            self.web_path = str(Path(self.web_path).resolve())
         super().save(*args, **kwargs)
+    
+    def delete(self, *args, **kwargs):
+        # Delete associated web file when video is deleted
+        if self.web_path and Path(self.web_path).exists():
+            Path(self.web_path).unlink()
+        super().delete(*args, **kwargs)
 
     def fps(self) -> float:
         """Return the frames per second as a float."""
@@ -48,6 +95,7 @@ class Video(models.Model):
         """
         Extract a frame using ffmpeg instead of OpenCV.
         This method is more robust for corrupted or complex videos.
+        Uses web proxy for faster processing when available.
         """
         fps = self.fps()
         time_sec = frame_index / fps
@@ -56,7 +104,7 @@ class Video(models.Model):
             "ffmpeg",
             "-loglevel", "error",
             "-ss", str(time_sec),
-            "-i", str(self.file_path),
+            "-i", str(self.processing_path),
             "-frames:v", "1",
             "-f", "image2pipe",
             "-vcodec", "png",
@@ -68,15 +116,16 @@ class Video(models.Model):
             img = Image.open(io.BytesIO(output))
             return img if as_pil else np.array(img)
         except subprocess.CalledProcessError:
-            print(f"[ERROR] ffmpeg failed to extract frame {frame_index} at {time_sec}s from {self.file_path}")
+            print(f"[ERROR] ffmpeg failed to extract frame {frame_index} at {time_sec}s from {self.processing_path}")
             return None
         except Exception as e:
-            print(f"[ERROR] Unexpected error extracting frame {frame_index} from {self.file_path}: {e}")
+            print(f"[ERROR] Unexpected error extracting frame {frame_index} from {self.processing_path}: {e}")
             return None
 
     def get_frame_range_images(self, start_frame: int, end_frame: int, as_pil=True) -> list:
         """
         Extracts a sequence of frames using ffmpeg (frame accurate).
+        Uses web proxy for faster processing when available.
         """
         if start_frame < 0 or end_frame >= self.frame_count or end_frame < start_frame:
             return []
@@ -87,7 +136,7 @@ class Video(models.Model):
             cmd = [
                 "ffmpeg",
                 "-loglevel", "error",
-                "-i", str(self.file_path),
+                "-i", str(self.processing_path),
                 "-vf", f"select='between(n\\,{start_frame}\\,{end_frame})'",
                 "-vsync", "0",
                 str(out_pattern)
@@ -96,7 +145,7 @@ class Video(models.Model):
             try:
                 subprocess.run(cmd, check=True)
             except subprocess.CalledProcessError:
-                print(f"[ERROR] ffmpeg failed to extract frames {start_frame}-{end_frame} from {self.file_path}")
+                print(f"[ERROR] ffmpeg failed to extract frames {start_frame}-{end_frame} from {self.processing_path}")
                 return []
 
             images = sorted(Path(tmpdir).glob("frame_*.png"))
@@ -108,6 +157,7 @@ class Video(models.Model):
     def get_selected_frame_images(self, frame_numbers: list[int], as_pil=True) -> list:
         """
         Extracts selected frames using ffmpeg by seeking to each one individually.
+        Uses web proxy for faster processing when available.
         """
         images = {}
         fps = self.fps()
@@ -119,7 +169,7 @@ class Video(models.Model):
                     "ffmpeg",
                     "-loglevel", "error",
                     "-ss", str(time_sec),
-                    "-i", str(self.file_path),
+                    "-i", str(self.processing_path),
                     "-frames:v", "1",
                     "-f", "image2pipe",
                     "-vcodec", "png",
@@ -129,7 +179,7 @@ class Video(models.Model):
                 img = Image.open(io.BytesIO(output))
                 images[frame_index] = img.convert("RGB") if as_pil else np.array(img)
             except Exception as e:
-                print(f"[WARN] Failed to extract frame {frame_index} from {self.file_path}: {e}")
+                print(f"[WARN] Failed to extract frame {frame_index} from {self.processing_path}: {e}")
                 images[frame_index] = None
 
         return [images.get(f) for f in frame_numbers]
