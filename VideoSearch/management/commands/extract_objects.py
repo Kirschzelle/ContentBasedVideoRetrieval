@@ -53,6 +53,10 @@ class Command(BaseCommand):
                     kf.save(update_fields=["object_vector"])
                     self.stdout.write(f"Keyframe {kf.id} processed.")
                 else:
-                    self.stdout.write(self.style.WARNING(f"No valid vector for Keyframe {kf.id}"))
+                    # Save empty vector (no objects detected above threshold)
+                    empty_vec = np.zeros(80, dtype=np.float32)
+                    kf.object_vector = Keyframe.compress_array(empty_vec)
+                    kf.save(update_fields=["object_vector"])
+                    self.stdout.write(f"Keyframe {kf.id} processed (no objects detected).")
 
         self.stdout.write(self.style.SUCCESS("Object vector extraction complete."))

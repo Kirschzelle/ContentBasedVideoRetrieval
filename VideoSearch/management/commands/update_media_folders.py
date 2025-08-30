@@ -15,9 +15,9 @@ class Command(BaseCommand):
             help='Show what would be scanned without importing'
         )
         parser.add_argument(
-            '--process',
+            '--no-process',
             action='store_true',
-            help='Run full processing pipeline after scanning'
+            help='Do NOT run processing pipeline (default: process videos)'
         )
         parser.add_argument(
             '--folder',
@@ -27,7 +27,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
-        process = options['process']
+        process = not options['no_process']  # Default True, disable with --no-process
         folder_filter = options['folder']
 
         # Get active media folders
@@ -99,42 +99,103 @@ class Command(BaseCommand):
 
         # Run processing pipeline if requested
         if process and not dry_run:
-            # Get total videos (imported + existing) to check if we have anything to process
-            total_videos = Video.objects.count()
-            if total_videos > 0:
-                self.stdout.write(f"\n🚀 Running processing pipeline for {total_videos} videos...")
+            self.stdout.write(f"\n🚀 Running processing pipeline...")
+            
+            # Check what needs processing
+            from VideoSearch.models import Clip, Keyframe
+            videos_needing_processing = self.check_processing_status()
+            
+            if videos_needing_processing['total'] > 0:
+                self.stdout.write(f"📊 Processing status:")
+                self.stdout.write(f"   🎬 Videos without web proxies: {videos_needing_processing['no_web_proxy']}")
+                self.stdout.write(f"   ✂️  Videos without clips: {videos_needing_processing['no_clips']}")
+                self.stdout.write(f"   🖼️  Videos without keyframes: {videos_needing_processing['no_keyframes']}")
+                self.stdout.write(f"   🎯 Videos without objects: {videos_needing_processing['no_objects']}")
                 
                 # Run processing steps directly (skip import_videos since we just imported)
                 from multiprocessing import cpu_count
                 worker_clip = min(1, cpu_count())
                 worker_keyframes = min(1, cpu_count())
                 
-                self.stdout.write("=== Creating Web Proxies ===")
-                call_command("create_web_videos", max_height=480, quality=18)
+                if videos_needing_processing['no_web_proxy'] > 0:
+                    self.stdout.write("=== Creating Web Proxies ===")
+                    call_command("create_web_videos", max_height=480, quality=18)
 
-                self.stdout.write("=== Extracting Clips ===")
-                call_command("extract_clips", workers=worker_clip)
+                if videos_needing_processing['no_clips'] > 0:
+                    self.stdout.write("=== Extracting Clips ===")
+                    call_command("extract_clips", workers=worker_clip)
 
-                self.stdout.write("=== Extracting Keyframes ===")
-                import torch
-                keyframe_kwargs = {
-                    "search_range_factor": 0.95 if torch.cuda.is_available() else 0.5,
-                    "frames_to_compare": 50 if torch.cuda.is_available() else 5,
-                    "workers": worker_keyframes
-                }
-                call_command("extract_keyframes", **keyframe_kwargs)
+                if videos_needing_processing['no_keyframes'] > 0:
+                    self.stdout.write("=== Extracting Keyframes ===")
+                    import torch
+                    keyframe_kwargs = {
+                        "search_range_factor": 0.95 if torch.cuda.is_available() else 0.5,
+                        "frames_to_compare": 50 if torch.cuda.is_available() else 5,
+                        "workers": worker_keyframes
+                    }
+                    call_command("extract_keyframes", **keyframe_kwargs)
 
-                self.stdout.write("=== Extracting Objects ===")
-                call_command("extract_objects", batch_size=4)
+                if videos_needing_processing['no_objects'] > 0:
+                    self.stdout.write("=== Extracting Objects ===")
+                    call_command("extract_objects", batch_size=4)
 
                 self.stdout.write("🎉 Complete processing finished!")
             else:
-                self.stdout.write("⚠️  No videos to process")
+                self.stdout.write("✅ All videos are already fully processed!")
 
         if dry_run:
             self.stdout.write(f"\n💡 Run without --dry-run to actually import videos")
-        elif total_imported > 0 and not process:
-            self.stdout.write(f"\n💡 Run with --process to automatically process imported videos")
+        elif not process:
+            self.stdout.write(f"\n💡 Processing was skipped (use without --no-process to enable)")
+
+    def check_processing_status(self):
+        """Check which videos need processing"""
+        from VideoSearch.models import Clip, Keyframe
+        from pathlib import Path
+        
+        all_videos = Video.objects.all()
+        
+        no_web_proxy = 0
+        no_clips = 0  
+        no_keyframes = 0
+        no_objects = 0
+        
+        for video in all_videos:
+            # Check web proxy
+            if not video.web_path or not Path(video.web_path).exists():
+                no_web_proxy += 1
+            
+            # Check clips
+            if not Clip.objects.filter(video=video).exists():
+                no_clips += 1
+            else:
+                # Check keyframes (only for videos that have clips)
+                clips_with_keyframes = Clip.objects.filter(
+                    video=video,
+                    keyframe__isnull=False
+                ).distinct().count()
+                total_clips = Clip.objects.filter(video=video).count()
+                
+                if clips_with_keyframes < total_clips:
+                    no_keyframes += 1
+                else:
+                    # Check objects (only for videos with keyframes)
+                    keyframes_with_objects = Keyframe.objects.filter(
+                        clip__video=video,
+                        object_vector__isnull=False
+                    ).count()
+                    total_keyframes = Keyframe.objects.filter(clip__video=video).count()
+                    
+                    if keyframes_with_objects < total_keyframes:
+                        no_objects += 1
+        
+        return {
+            'total': no_web_proxy + no_clips + no_keyframes + no_objects,
+            'no_web_proxy': no_web_proxy,
+            'no_clips': no_clips,
+            'no_keyframes': no_keyframes,
+            'no_objects': no_objects
+        }
 
     def import_folder_videos(self, video_files):
         """Import videos from a list of file paths"""
