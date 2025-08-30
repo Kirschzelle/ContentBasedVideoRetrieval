@@ -15,7 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from VideoSearch import views
@@ -25,6 +25,7 @@ urlpatterns = [
     path("api/search/", views.api_search_view, name="api_search"),
     path("api/color/", views.api_search_view, name="color_filter"),
     path('detailed_view/<int:keyframe_id>/', views.detailed_view, name='detailed_view'),
+    path('davinci/', include('VideoSearch.urls_davinci')),
     path('admin/', admin.site.urls)
 ]
 

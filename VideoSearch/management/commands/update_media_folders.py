@@ -122,7 +122,13 @@ class Command(BaseCommand):
                     self.stdout.write(">> Creating Web Proxies...")
                     from VideoSearch.management.internal.create_web_videos import Command as CreateWebVideosCommand
                     cmd = CreateWebVideosCommand()
-                    cmd.handle(max_height=480, quality=18)
+                    cmd.handle(
+                        output_dir='data/videos_web',
+                        max_height=480,
+                        quality=18,
+                        force=False,
+                        replace_originals=False
+                    )
 
                 if videos_needing_processing['no_clips'] > 0:
                     self.stdout.write(">> Extracting Clips...")

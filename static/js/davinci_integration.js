@@ -40,16 +40,16 @@ class DaVinciIntegration {
             // Create DaVinci button
             const button = document.createElement('button');
             button.className = 'davinci-btn';
-            button.innerHTML = '🎬 Send to DaVinci';
+            button.innerHTML = 'Send to DaVinci';
             button.title = 'Send clip to DaVinci Resolve preview';
             
             if (!this.daVinciAvailable) {
                 button.disabled = true;
                 button.title = 'DaVinci Resolve not available';
-                button.innerHTML = '🎬 DaVinci (offline)';
+                button.innerHTML = 'DaVinci (offline)';
             } else if (!this.projectOpen) {
                 button.title = 'Open a project in DaVinci Resolve first';
-                button.innerHTML = '🎬 DaVinci (no project)';
+                button.innerHTML = 'DaVinci (no project)';
             }
             
             button.onclick = () => this.sendToDaVinci(keyframeId, button);
@@ -70,7 +70,7 @@ class DaVinciIntegration {
         
         // Show loading state
         const originalText = button.innerHTML;
-        button.innerHTML = '⏳ Sending...';
+        button.innerHTML = 'Sending...';
         button.disabled = true;
         
         try {
@@ -86,7 +86,7 @@ class DaVinciIntegration {
             
             if (data.success) {
                 this.showMessage(
-                    `✅ Sent to DaVinci! ${data.video_name} at ${data.timecode}`, 
+                    `Sent to DaVinci! ${data.video_name} at ${data.timecode}`, 
                     'success'
                 );
                 
@@ -94,11 +94,11 @@ class DaVinciIntegration {
                 this.trackDaVinciEngagement(keyframeId);
                 
             } else {
-                this.showMessage(`❌ Failed: ${data.error}`, 'error');
+                this.showMessage(`Failed: ${data.error}`, 'error');
             }
             
         } catch (error) {
-            this.showMessage(`❌ Error: ${error.message}`, 'error');
+            this.showMessage(`Error: ${error.message}`, 'error');
         } finally {
             // Restore button
             button.innerHTML = originalText;
