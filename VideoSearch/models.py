@@ -296,6 +296,7 @@ class Keyframe(models.Model):
     transcript_text = models.TextField(null=True, blank=True)
     transcript_confidence = models.FloatField(null=True, blank=True) 
     transcript_context = models.TextField(null=True, blank=True)
+    transcript_embedding = models.BinaryField(null=True, blank=True)
 
     class Meta:
         unique_together = ("clip", "frame")
@@ -345,12 +346,16 @@ class Keyframe(models.Model):
     def load_object_vector(self):
         return self.decompress_array(self.object_vector) if self.object_vector else None
 
+    def load_transcript_embedding(self):
+        return self.decompress_array(self.transcript_embedding) if self.transcript_embedding else None
+
     def get_transcript_data(self) -> dict:
         """Returns transcript data for this keyframe."""
         return {
             "text": self.transcript_text,
             "confidence": self.transcript_confidence,
-            "context": self.transcript_context
+            "context": self.transcript_context,
+            "embedding": self.load_transcript_embedding()
         }
 
     def get_features_from_keyframe(self) -> dict:
@@ -361,6 +366,7 @@ class Keyframe(models.Model):
             "palette": self.load_dominant_colors(),
             "colorfulness": self.colorfulness,
             "object_vector": self.load_object_vector(),
+            "transcript_embedding": self.load_transcript_embedding(),
             "transcript": self.get_transcript_data()
         }
 
@@ -377,7 +383,8 @@ class Keyframe(models.Model):
         object_vector: dict = None,
         transcript_text: str = None,
         transcript_confidence: float = None,
-        transcript_context: str = None
+        transcript_context: str = None,
+        transcript_embedding: np.ndarray = None
     ):
         keyframe = cls.objects.create(
             clip=clip,
@@ -390,7 +397,8 @@ class Keyframe(models.Model):
             object_vector=cls.compress_array(object_vector) if object_vector is not None else None,
             transcript_text=transcript_text,
             transcript_confidence=transcript_confidence,
-            transcript_context=transcript_context
+            transcript_context=transcript_context,
+            transcript_embedding=cls.compress_array(transcript_embedding) if transcript_embedding is not None else None
         )
         keyframe.save_image()
         return keyframe

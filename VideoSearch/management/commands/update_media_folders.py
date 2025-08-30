@@ -198,7 +198,7 @@ class Command(BaseCommand):
                     # Check transcripts (only for videos with keyframes)
                     keyframes_with_transcripts = Keyframe.objects.filter(
                         clip__video=video,
-                        transcript_text__isnull=False
+                        transcript_embedding__isnull=False
                     ).count()
                     total_keyframes = Keyframe.objects.filter(clip__video=video).count()
                     

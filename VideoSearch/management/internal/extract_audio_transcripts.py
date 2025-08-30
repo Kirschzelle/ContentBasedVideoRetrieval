@@ -1,6 +1,7 @@
 from VideoSearch.management.base import StyledCommand as BaseCommand
 from VideoSearch.models import Video, Keyframe
 from VideoSearch.utils.audio import AudioTranscriber, keyframe_time_from_video_info
+from VideoSearch.utils.transcript_embeddings import get_transcript_embedder
 from collections import defaultdict
 from pathlib import Path
 
@@ -33,12 +34,13 @@ class Command(BaseCommand):
         context_window = options['context_window']
         batch_videos = options['batch_videos']
 
-        # Initialize transcriber
+        # Initialize transcriber and embedder
         transcriber = AudioTranscriber(model_size=model_size, command=self)
+        embedder = get_transcript_embedder()
 
         # Find keyframes without transcript data
         keyframes_without_transcripts = Keyframe.objects.filter(
-            transcript_text__isnull=True
+            transcript_embedding__isnull=True
         ).select_related('clip', 'clip__video')
 
         if not keyframes_without_transcripts.exists():
@@ -84,8 +86,9 @@ class Command(BaseCommand):
                             keyframe.transcript_text = ""
                             keyframe.transcript_confidence = 0.0
                             keyframe.transcript_context = ""
+                            keyframe.transcript_embedding = None
                             keyframe.save(update_fields=[
-                                'transcript_text', 'transcript_confidence', 'transcript_context'
+                                'transcript_text', 'transcript_confidence', 'transcript_context', 'transcript_embedding'
                             ])
                             processed_keyframes += 1
                         continue
@@ -102,12 +105,23 @@ class Command(BaseCommand):
                             keyframe_time, segments, context_window
                         )
 
+                        # Generate embedding for transcript text
+                        transcript_embedding = None
+                        embedding_text = primary_text or context_text
+                        if embedding_text and embedding_text.strip():
+                            transcript_embedding = embedder.encode_text(embedding_text.strip())
+                        
                         # Update keyframe with transcript data
                         keyframe.transcript_text = primary_text or ""
                         keyframe.transcript_confidence = confidence or 0.0
                         keyframe.transcript_context = context_text or ""
+                        if transcript_embedding is not None:
+                            keyframe.transcript_embedding = Keyframe.compress_array(transcript_embedding)
+                        else:
+                            keyframe.transcript_embedding = None
+                            
                         keyframe.save(update_fields=[
-                            'transcript_text', 'transcript_confidence', 'transcript_context'
+                            'transcript_text', 'transcript_confidence', 'transcript_context', 'transcript_embedding'
                         ])
                         processed_keyframes += 1
 

@@ -27,7 +27,7 @@ class Searcher:
             .only("id", "clip__video__id", "clip__id", "frame",
                   "embedding_clip", "embedding_dino", "histogram_hsv",
                   "dominant_colors", "colorfulness", "object_vector",
-                  "transcript_text", "transcript_confidence", "transcript_context")
+                  "transcript_text", "transcript_confidence", "transcript_context", "transcript_embedding")
         }
 
         self.clip_index, self.id_map = build_annoy_index(
@@ -47,6 +47,11 @@ class Searcher:
 
         self.object_index, self.object_id_map = build_annoy_index(
             feature_name="object_vector",
+            kf_lookup=self.kf_lookup
+        )
+
+        self.transcript_index, self.transcript_id_map = build_annoy_index(
+            feature_name="transcript_embedding",
             kf_lookup=self.kf_lookup
         )
 
@@ -85,11 +90,12 @@ class Searcher:
         # Convert Annoy indices to keyframe IDs
         clip_keyframe_ids = set(self.id_map[i] for i in clip_ids)
         
-        # Add transcript search results
-        transcript_ids = self._search_transcripts(query, threshold=0.3)
+        # Add transcript search results (both embedding and text-based)
+        transcript_ids_embedding = self._search_transcript_embeddings(query)
+        transcript_ids_text = self._search_transcripts(query, threshold=0.3)
         
         # Combine all candidate IDs
-        all_candidate_ids = clip_keyframe_ids | filter_ids | transcript_ids
+        all_candidate_ids = clip_keyframe_ids | filter_ids | transcript_ids_embedding | transcript_ids_text
         all_candidate_ids.difference_update(returned_ids)
 
         scored = []
@@ -145,9 +151,42 @@ class Searcher:
         
         return matching_ids
     
+    def _search_transcript_embeddings(self, query: str) -> set:
+        """
+        Search for keyframes using transcript embeddings.
+        
+        Args:
+            query: Search query string
+            
+        Returns:
+            Set of keyframe IDs with similar transcript embeddings
+        """
+        if not query.strip() or not self.transcript_index:
+            return set()
+            
+        try:
+            # Encode query using same embedder
+            from VideoSearch.utils.transcript_embeddings import get_transcript_embedder
+            embedder = get_transcript_embedder()
+            query_embedding = embedder.encode_text(query.strip())
+            
+            if query_embedding is None:
+                return set()
+                
+            # Search transcript embedding index
+            transcript_annoy_ids = self.transcript_index.get_nns_by_vector(query_embedding, 1000)
+            transcript_keyframe_ids = set(self.transcript_id_map[i] for i in transcript_annoy_ids)
+            
+            return transcript_keyframe_ids
+            
+        except Exception as e:
+            # Fallback gracefully if embeddings not available
+            return set()
+    
     def _compute_transcript_similarity(self, query: str, candidate_features: dict) -> float:
         """
         Compute transcript similarity score for a candidate keyframe.
+        Uses embeddings when available, falls back to word matching.
         
         Args:
             query: Search query string
@@ -160,6 +199,26 @@ class Searcher:
         if not transcript_data:
             return 1.0  # No transcript data - neutral score
             
+        # Try embedding-based similarity first
+        transcript_embedding = transcript_data.get("embedding")
+        if transcript_embedding is not None:
+            try:
+                from VideoSearch.utils.transcript_embeddings import get_transcript_embedder
+                embedder = get_transcript_embedder()
+                query_embedding = embedder.encode_text(query.strip())
+                
+                if query_embedding is not None:
+                    # Compute cosine similarity (embeddings are normalized)
+                    similarity = max(0.0, np.dot(query_embedding, transcript_embedding))
+                    confidence = transcript_data.get("confidence", 0.8)
+                    confidence_weight = max(0.3, confidence) if confidence else 0.3
+                    
+                    # Convert similarity to distance with confidence weighting
+                    return 1.0 - (similarity * confidence_weight)
+            except Exception:
+                pass  # Fall back to word matching
+        
+        # Fallback: word-based matching (original logic)
         primary_text = transcript_data.get("text", "")
         confidence = transcript_data.get("confidence", 0.0)
         context_text = transcript_data.get("context", "")
