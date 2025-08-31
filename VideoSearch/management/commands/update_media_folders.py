@@ -223,10 +223,10 @@ class Command(BaseCommand):
         return {
             'total': no_web_proxy + no_clips + no_keyframes + no_transcripts + no_objects,
             'no_web_proxy': no_web_proxy,
-            'no_clips': no_clips,
-            'no_keyframes': no_keyframes,
-            'no_transcripts': no_transcripts,
-            'no_objects': no_objects
+            'no_clips': no_clips + no_web_proxy,
+            'no_keyframes': no_keyframes + no_clips + no_web_proxy,
+            'no_transcripts': no_transcripts + no_keyframes + no_clips + no_web_proxy,
+            'no_objects': no_objects + no_transcripts + no_keyframes + no_clips + no_web_proxy
         }
 
     def import_folder_videos(self, video_files):

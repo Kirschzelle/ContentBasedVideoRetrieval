@@ -26,6 +26,7 @@ urlpatterns = [
     path("api/color/", views.api_search_view, name="color_filter"),
     path('detailed_view/<int:keyframe_id>/', views.detailed_view, name='detailed_view'),
     path('davinci/', include('VideoSearch.urls_davinci')),
+    path('external-frame/', include('VideoSearch.urls_external_frame')),
     path('admin/', admin.site.urls)
 ]
 

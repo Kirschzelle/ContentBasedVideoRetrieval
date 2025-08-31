@@ -4,6 +4,8 @@ import numpy as np
 from multiprocessing import Pool, cpu_count
 import multiprocessing
 from functools import partial
+import subprocess
+from tqdm import tqdm
 
 DEFAULT_CLIP_EXTRACTION_SETTINGS = {
     "threshold_low": 0.45,
@@ -51,17 +53,25 @@ class Command(BaseCommand):
         self.stdout.write(self.style_info(f"Processing {len(video_ids)} videos using {num_workers} worker(s)."))
 
         if num_workers == 1:
-            # Run sequentially (no Pool)
-            for vid in video_ids:
-                result = process_video_for_clips(vid, kwargs)
-                self.stdout.write(self.style_success(result))
+            # Run sequentially with progress bar
+            with tqdm(total=len(video_ids), desc="Extracting clips", unit="video", 
+                     dynamic_ncols=True, leave=True, ascii=True) as pbar:
+                for i, vid in enumerate(video_ids, 1):
+                    result = process_video_for_clips(vid, kwargs, progress=(i, len(video_ids)), pbar=pbar)
+                    if result:
+                        # Clean up the result message for display
+                        clean_result = result.split("] ", 1)[-1] if "] " in result else result
+                        pbar.set_postfix_str(clean_result[:50] + "..." if len(clean_result) > 50 else clean_result)
+                    pbar.update(1)
         else:
+            # Add progress tracking to multiprocessing
+            video_data = [(vid, kwargs, (i, len(video_ids))) for i, vid in enumerate(video_ids, 1)]
             with Pool(processes=num_workers) as pool:
-                results = pool.map(partial(process_video_for_clips, kwargs=kwargs), video_ids)
+                results = pool.starmap(process_video_for_clips_with_progress, video_data)
             for msg in results:
                 self.stdout.write(self.style_success(msg))
 
-def process_video_for_clips(video_id, kwargs):
+def process_video_for_clips(video_id, kwargs, progress=None, pbar=None):
     import os
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ContentBasedVideoRetrieval.settings")
     import django
@@ -73,15 +83,18 @@ def process_video_for_clips(video_id, kwargs):
 
     video = Video.objects.get(id=video_id)
     path = Path(video.processing_path)
+    
+    # Add progress prefix
+    progress_str = f"[{progress[0]}/{progress[1]}] " if progress else ""
 
     existing_clips = Clip.objects.filter(video=video)
     if existing_clips.exists() and is_clip_coverage_complete(video):
-        return f"Skipping {path.name} - clips fully exist."
+        return f"{progress_str}Skipping {path.name} - clips fully exist."
 
     Clip.objects.filter(video=video).delete()
 
     model = TransNetV2()
-    clips, predictions = extract_clips(model, video, path, **kwargs)
+    clips, predictions = extract_clips(model, video, path, pbar=pbar, **kwargs)
 
     for start_frame, end_frame in clips:
         clip = Clip.objects.create(
@@ -91,7 +104,11 @@ def process_video_for_clips(video_id, kwargs):
         )
         ClipPredictionCache.store(clip, predictions[start_frame:end_frame + 1])
 
-    return f"Stored {len(clips)} clips for {path.name}"
+    return f"{progress_str}Stored {len(clips)} clips for {path.name}"
+
+def process_video_for_clips_with_progress(video_id, kwargs, progress):
+    """Wrapper for multiprocessing that unpacks progress tuple."""
+    return process_video_for_clips(video_id, kwargs, progress)
             
 def is_clip_coverage_complete(video):
     from VideoSearch.models import Clip
@@ -102,12 +119,17 @@ def is_clip_coverage_complete(video):
     current = 0
     for clip in clips:
         if clip.start_frame != current:
+            print(f"WARNING: Gap in coverage for video {video.id}: expected frame {current}, got {clip.start_frame}")
             return False
         current = clip.end_frame + 1
 
-    return current >= video.frame_count
+    if current < video.frame_count:
+        print(f"WARNING: Incomplete coverage for video {video.id}: clips end at {current}, video has {video.frame_count} frames")
+        return False
+    
+    return True
 
-def extract_clips(model, video, video_path, **kwargs):
+def extract_clips(model, video, video_path, pbar=None, **kwargs):
     """
     Runs clip boundary detection on a video file using TransNetV2 predictions.
     Applies multi-pass local maxima analysis with confidence-based filtering.
@@ -117,16 +139,70 @@ def extract_clips(model, video, video_path, **kwargs):
     _, single_frame_predictions, _ = model.predict_video(str(video_path))
 
     fps = video.fps()
+    
+    # Debug: Check prediction vs frame count mismatch
+    pred_len = len(single_frame_predictions)
+    if pred_len != video.frame_count:
+        if not pbar:  # Only print detailed debug info when NOT using progress bar
+            print(f"WARNING: Prediction length ({pred_len}) != video frame count ({video.frame_count}) for {video_path.name}")
+            print(f"Verifying actual frame count...")
+        
+        # Get actual frame count from video file
+        actual_frame_count = get_actual_frame_count(video_path, pbar)
+        
+        if actual_frame_count is not None:
+            if actual_frame_count == pred_len:
+                if not pbar:
+                    print(f"INFO: TransNetV2 is correct ({pred_len} frames), updating video metadata")
+                video.frame_count = pred_len
+                video.save()
+            elif actual_frame_count == video.frame_count:
+                if not pbar:
+                    print(f"INFO: Video metadata is correct ({video.frame_count} frames), TransNetV2 processing incomplete")
+            else:
+                if not pbar:
+                    print(f"INFO: All three counts differ - Metadata: {video.frame_count}, TransNetV2: {pred_len}, Actual: {actual_frame_count}")
+                    print(f"Using actual frame count ({actual_frame_count}) as ground truth")
+                video.frame_count = actual_frame_count
+                video.save()
+        else:
+            if not pbar:
+                print(f"WARNING: Could not verify actual frame count, proceeding with existing logic")
 
     settings = {k: kwargs.get(k, v) for k, v in DEFAULT_CLIP_EXTRACTION_SETTINGS.items()}
 
+    # Set pbar as function attribute for debug messages
+    multipass_predictions_to_scenes._pbar = pbar
+    
     scenes = multipass_predictions_to_scenes(
         predictions=single_frame_predictions,
         fps=fps,
         **settings,
     )
 
-    return [(int(start), int(end)) for start, end in scenes], single_frame_predictions
+    # Fix frame count mismatches: handle both under-processing and over-processing
+    clips = [(int(start), int(end)) for start, end in scenes]
+    if clips and pred_len != video.frame_count:
+        # Get actual frame count to ensure we don't create invalid clips
+        actual_frame_count = get_actual_frame_count(video_path, pbar)
+        if actual_frame_count is None:
+            actual_frame_count = pred_len  # Fallback to TransNetV2 count if verification fails
+        
+        # Use the smaller of database count or actual count to be safe
+        safe_max_frame = min(video.frame_count - 1, actual_frame_count - 1)
+        
+        # Always cap clips to safe bounds, regardless of over/under processing
+        last_start, last_end = clips[-1]
+        if last_end > safe_max_frame:
+            clips[-1] = (last_start, safe_max_frame)
+            if not pbar:
+                frame_gap = video.frame_count - pred_len
+                if frame_gap < 0:
+                    print(f"INFO: Capped last clip from {last_end} to {safe_max_frame} (TransNetV2 over-processed by {abs(frame_gap)} frames)")
+                else:
+                    print(f"INFO: Extended last clip by {frame_gap} frames to frame {safe_max_frame} (verified)")
+
+    return clips, single_frame_predictions
 
 def multipass_predictions_to_scenes(
     predictions: np.ndarray,
@@ -175,6 +251,41 @@ def multipass_predictions_to_scenes(
         start = cut + 1
 
     if start < len(predictions):
+        # Make sure the last scene covers all remaining frames
         scenes.append((start, len(predictions) - 1))
+    
+    # Debug: Print scene coverage info (only when not using progress bar)
+    if scenes and not (hasattr(multipass_predictions_to_scenes, '_pbar') and multipass_predictions_to_scenes._pbar):
+        total_frames = sum(end - start + 1 for start, end in scenes)
+        print(f"DEBUG: Created {len(scenes)} scenes covering {total_frames} frames, predictions length: {len(predictions)}")
 
     return scenes
+
+def get_actual_frame_count(video_path, pbar=None):
+    """
+    Get the actual number of decodable frames in a video file.
+    More accurate than metadata-based estimates.
+    """
+    try:
+        # Count actual decodable frames using ffprobe
+        cmd = [
+            "ffprobe", 
+            "-v", "quiet",
+            "-select_streams", "v:0",
+            "-count_frames",
+            "-show_entries", "stream=nb_read_frames",
+            "-of", "csv=p=0",
+            str(video_path)
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        
+        # Parse the frame count directly
+        frame_count = int(result.stdout.strip())
+        
+        return frame_count if frame_count > 0 else None
+        
+    except (subprocess.CalledProcessError, Exception) as e:
+        if not pbar:
+            print(f"ERROR: Could not get actual frame count for {video_path}: {e}")
+        return None

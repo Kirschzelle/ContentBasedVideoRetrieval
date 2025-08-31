@@ -3,11 +3,11 @@ URL patterns for DaVinci Resolve integration.
 """
 
 from django.urls import path
-from VideoSearch.views import davinci_views
+from VideoSearch.views import send_to_davinci, check_davinci_status
 
 app_name = 'davinci'
 
 urlpatterns = [
-    path('send/', davinci_views.send_to_davinci, name='send_to_davinci'),
-    path('status/', davinci_views.check_davinci_status, name='check_status'),
+    path('send/', send_to_davinci, name='send_to_davinci'),
+    path('status/', check_davinci_status, name='check_status'),
 ]

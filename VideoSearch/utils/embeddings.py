@@ -96,6 +96,10 @@ class ImageEmbedder:
                 "dino_emb": dino_embs[i] if self.mode != "clip-only" else None
             })
 
+        # GPU memory cleanup after batch inference
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         return features_list
 
     def get_combined_distance_to_set(self, query: dict, feature_set: list[dict]):

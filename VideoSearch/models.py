@@ -95,92 +95,118 @@ class Video(models.Model):
         """
         Extract a frame using ffmpeg instead of OpenCV.
         This method is more robust for corrupted or complex videos.
-        Uses web proxy for faster processing when available.
+        Uses web proxy for faster processing when available, falls back to original if needed.
         """
         fps = self.fps()
         time_sec = frame_index / fps
 
-        command = [
-            "ffmpeg",
-            "-loglevel", "error",
-            "-ss", str(time_sec),
-            "-i", str(self.processing_path),
-            "-frames:v", "1",
-            "-f", "image2pipe",
-            "-vcodec", "png",
-            "-"
-        ]
+        # Try with processing path first (prefers web video), then fallback to original
+        for video_path in [self.processing_path, self.file_path]:
+            command = [
+                "ffmpeg",
+                "-loglevel", "error",
+                "-ss", str(time_sec),
+                "-i", str(video_path),
+                "-frames:v", "1",
+                "-f", "image2pipe",
+                "-vcodec", "png",
+                "-"
+            ]
 
-        try:
-            output = subprocess.check_output(command, stderr=subprocess.DEVNULL)
-            img = Image.open(io.BytesIO(output))
-            return img if as_pil else np.array(img)
-        except subprocess.CalledProcessError:
-            print(f"[ERROR] ffmpeg failed to extract frame {frame_index} at {time_sec}s from {self.processing_path}")
-            return None
-        except Exception as e:
-            print(f"[ERROR] Unexpected error extracting frame {frame_index} from {self.processing_path}: {e}")
-            return None
+            try:
+                output = subprocess.check_output(command, stderr=subprocess.DEVNULL)
+                img = Image.open(io.BytesIO(output))
+                return img if as_pil else np.array(img)
+            except Exception as e:
+                if video_path == self.processing_path and video_path != self.file_path:
+                    # Only warn on first attempt if we have a fallback
+                    print(f"[WARN] Failed to extract frame {frame_index} from web video, trying original: {e}")
+                else:
+                    # Final failure
+                    print(f"[ERROR] Failed to extract frame {frame_index} from {video_path}: {e}")
+                    
+        return None
 
     def get_frame_range_images(self, start_frame: int, end_frame: int, as_pil=True) -> list:
         """
         Extracts a sequence of frames using ffmpeg (frame accurate).
-        Uses web proxy for faster processing when available.
+        Uses web proxy for faster processing when available, falls back to original if needed.
         """
         if start_frame < 0 or end_frame >= self.frame_count or end_frame < start_frame:
             return []
 
         fps = self.fps()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out_pattern = Path(tmpdir) / "frame_%05d.png"
-            cmd = [
-                "ffmpeg",
-                "-loglevel", "error",
-                "-i", str(self.processing_path),
-                "-vf", f"select='between(n\\,{start_frame}\\,{end_frame})'",
-                "-vsync", "0",
-                str(out_pattern)
-            ]
+        
+        # Try with processing path first (prefers web video), then fallback to original
+        for video_path in [self.processing_path, self.file_path]:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                out_pattern = Path(tmpdir) / "frame_%05d.png"
+                cmd = [
+                    "ffmpeg",
+                    "-loglevel", "error",
+                    "-i", str(video_path),
+                    "-vf", f"select='between(n\\,{start_frame}\\,{end_frame})'",
+                    "-vsync", "0",
+                    str(out_pattern)
+                ]
 
-            try:
-                subprocess.run(cmd, check=True)
-            except subprocess.CalledProcessError:
-                print(f"[ERROR] ffmpeg failed to extract frames {start_frame}-{end_frame} from {self.processing_path}")
-                return []
-
-            images = sorted(Path(tmpdir).glob("frame_*.png"))
-            if as_pil:
-                return [Image.open(p).convert("RGB").copy() for p in images]
-            else:
-                return [cv2.cvtColor(cv2.imread(str(p)), cv2.COLOR_BGR2RGB) for p in images]
+                try:
+                    subprocess.run(cmd, check=True)
+                    images = sorted(Path(tmpdir).glob("frame_*.png"))
+                    if as_pil:
+                        return [Image.open(p).convert("RGB").copy() for p in images]
+                    else:
+                        return [cv2.cvtColor(cv2.imread(str(p)), cv2.COLOR_BGR2RGB) for p in images]
+                except subprocess.CalledProcessError as e:
+                    if video_path == self.processing_path and video_path != self.file_path:
+                        # Only warn on first attempt if we have a fallback
+                        print(f"[WARN] Failed to extract frames {start_frame}-{end_frame} from web video, trying original: {e}")
+                    else:
+                        # Final failure
+                        print(f"[ERROR] Failed to extract frames {start_frame}-{end_frame} from {video_path}: {e}")
+                        
+        return []
 
     def get_selected_frame_images(self, frame_numbers: list[int], as_pil=True) -> list:
         """
         Extracts selected frames using ffmpeg by seeking to each one individually.
-        Uses web proxy for faster processing when available.
+        Uses web proxy for faster processing when available, falls back to original if needed.
         """
         images = {}
         fps = self.fps()
 
         for frame_index in sorted(set(frame_numbers)):
             time_sec = frame_index / fps
-            try:
-                cmd = [
-                    "ffmpeg",
-                    "-loglevel", "error",
-                    "-ss", str(time_sec),
-                    "-i", str(self.processing_path),
-                    "-frames:v", "1",
-                    "-f", "image2pipe",
-                    "-vcodec", "png",
-                    "-"
-                ]
-                output = subprocess.check_output(cmd)
-                img = Image.open(io.BytesIO(output))
-                images[frame_index] = img.convert("RGB") if as_pil else np.array(img)
-            except Exception as e:
-                print(f"[WARN] Failed to extract frame {frame_index} from {self.processing_path}: {e}")
-                images[frame_index] = None
+            
+            # Try with processing path first (prefers web video)
+            success = False
+            for video_path in [self.processing_path, self.file_path]:
+                if success:
+                    break
+                    
+                try:
+                    cmd = [
+                        "ffmpeg",
+                        "-loglevel", "error",
+                        "-ss", str(time_sec),
+                        "-i", str(video_path),
+                        "-frames:v", "1",
+                        "-f", "image2pipe",
+                        "-vcodec", "png",
+                        "-"
+                    ]
+                    output = subprocess.check_output(cmd)
+                    img = Image.open(io.BytesIO(output))
+                    images[frame_index] = img.convert("RGB") if as_pil else np.array(img)
+                    success = True
+                except Exception as e:
+                    if video_path == self.processing_path and video_path != self.file_path:
+                        # Only warn on first attempt if we have a fallback
+                        print(f"[WARN] Failed to extract frame {frame_index} from web video, trying original: {e}")
+                    else:
+                        # Final failure (either no fallback available or fallback also failed)
+                        print(f"[ERROR] Failed to extract frame {frame_index} from {video_path}: {e}")
+                        images[frame_index] = None
 
         return [images.get(f) for f in frame_numbers]
     
@@ -618,3 +644,94 @@ class WeightingModel(models.Model):
     
     def __str__(self):
         return f"WeightingModel({self.query_type}) - {self.training_samples} samples"
+
+class UploadedFrame(models.Model):
+    """Store uploaded external frames for search filtering."""
+    
+    # File info
+    filename = models.CharField(max_length=255)
+    file_size = models.IntegerField()
+    content_type = models.CharField(max_length=100)
+    upload_timestamp = models.DateTimeField(auto_now_add=True)
+    
+    # Image metadata
+    width = models.IntegerField()
+    height = models.IntegerField()
+    
+    # Features (same as Keyframe)
+    embedding_clip = models.BinaryField()
+    embedding_dino = models.BinaryField(null=True, blank=True)
+    histogram_hsv = models.BinaryField(null=True, blank=True)
+    dominant_colors = models.BinaryField(null=True, blank=True)
+    colorfulness = models.FloatField(null=True, blank=True)
+    object_vector = models.BinaryField(null=True, blank=True)
+    
+    # Session tracking (optional)
+    session_key = models.CharField(max_length=64, null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-upload_timestamp']  # Latest first
+        indexes = [
+            models.Index(fields=['upload_timestamp']),
+            models.Index(fields=['session_key']),
+        ]
+    
+    def __str__(self):
+        return f"UploadedFrame: {self.filename} ({self.upload_timestamp})"
+    
+    @staticmethod
+    def compress_array(array: np.ndarray) -> bytes:
+        return zlib.compress(array.astype(np.float32).tobytes())
+
+    @staticmethod
+    def decompress_array(blob: bytes, dtype=np.float32) -> np.ndarray:
+        return np.frombuffer(zlib.decompress(blob), dtype=dtype).copy()
+    
+    def load_embedding_clip(self):
+        return self.decompress_array(self.embedding_clip)
+
+    def load_embedding_dino(self):
+        return self.decompress_array(self.embedding_dino) if self.embedding_dino else None
+
+    def load_histogram_hsv(self):
+        return self.decompress_array(self.histogram_hsv) if self.histogram_hsv else None
+
+    def load_dominant_colors(self):
+        arr = self.decompress_array(self.dominant_colors) if self.dominant_colors else None
+        return arr.reshape(-1, 3) if arr is not None else None
+
+    def load_object_vector(self):
+        return self.decompress_array(self.object_vector) if self.object_vector else None
+    
+    def get_features_dict(self) -> dict:
+        """Return features in same format as Keyframe."""
+        return {
+            "clip_emb": self.load_embedding_clip(),
+            "dino_emb": self.load_embedding_dino(),
+            "histogram": self.load_histogram_hsv(),
+            "palette": self.load_dominant_colors(),
+            "colorfulness": self.colorfulness,
+            "object_vector": self.load_object_vector(),
+        }
+    
+    # Fake properties to make it compatible with search results display
+    @property
+    def id(self):
+        return f"uploaded_{super().id}"  # Prefix to distinguish from real keyframes
+    
+    def get_image_path(self) -> Path:
+        """Return a fake path for display purposes."""
+        return Path(f"uploaded_frames/{self.filename}")
+        
+    @property
+    def clip(self):
+        """Fake clip property for template compatibility."""
+        class FakeClip:
+            @property
+            def video(self):
+                class FakeVideo:
+                    @property 
+                    def file_name(self):
+                        return "Uploaded Frame"
+                return FakeVideo()
+        return FakeClip()

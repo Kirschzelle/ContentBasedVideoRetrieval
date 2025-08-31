@@ -65,6 +65,14 @@ class VisualFeatureExtractor:
         selected_frame_numbers = [start + i for i in indices]
 
         batched_features = self.extract_features_batch(selected_images)
+        
+        # GPU memory cleanup after batch processing
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
 
         candidates = []
         for frame_number, features in zip(selected_frame_numbers, batched_features):
