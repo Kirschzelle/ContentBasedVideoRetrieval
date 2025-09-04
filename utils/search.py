@@ -19,13 +19,20 @@ class Searcher:
         clip_model_name, _, _ = hardware.select()
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
+        
         try:
-            self.model = CLIPModel.from_pretrained(clip_model_name).to(self.device)
-        except NotImplementedError:
-            model = CLIPModel.from_pretrained(clip_model_name)
-            self.model = model.to_empty(device=self.device)
-            self.model.load_state_dict(model.state_dict())
+            logger.info(f"Loading {clip_model_name} from local cache")
+            self.tokenizer = CLIPTokenizer.from_pretrained(clip_model_name, local_files_only=True)
+            self.model = CLIPModel.from_pretrained(clip_model_name, local_files_only=True).to(self.device)
+        except (OSError, ValueError):
+            logger.info(f"Local cache not found, downloading {clip_model_name}")
+            self.tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
+            try:
+                self.model = CLIPModel.from_pretrained(clip_model_name).to(self.device)
+            except NotImplementedError:
+                model = CLIPModel.from_pretrained(clip_model_name)
+                self.model = model.to_empty(device=self.device)
+                self.model.load_state_dict(model.state_dict())
 
         self.last_query = None
         self.last_embedding = None
@@ -548,11 +555,30 @@ class Searcher:
         if text == self.last_query and self.last_embedding is not None:
             return self.last_embedding
 
-        inputs = self.tokenizer([text], return_tensors="pt").to(self.device)
-        with torch.no_grad():
-            features = self.model.get_text_features(**inputs)
-        features = features[0].cpu().numpy()
-        features /= np.linalg.norm(features)
+        try:
+            inputs = self.tokenizer([text], return_tensors="pt")
+            
+            if self.device == "cuda" and torch.cuda.is_available():
+                inputs = inputs.to(self.device)
+            
+            with torch.no_grad():
+                features = self.model.get_text_features(**inputs)
+            
+            features = features[0].cpu().numpy()
+            features /= np.linalg.norm(features)
+            
+        except RuntimeError as e:
+            if "CUDA" in str(e):
+                logger.warning(f"CUDA error in encode_text, falling back to CPU: {e}")
+                self.device = "cpu"
+                self.model = self.model.cpu()
+                inputs = self.tokenizer([text], return_tensors="pt")
+                with torch.no_grad():
+                    features = self.model.get_text_features(**inputs)
+                features = features[0].cpu().numpy()
+                features /= np.linalg.norm(features)
+            else:
+                raise
 
         self.last_query = text
         self.last_embedding = features

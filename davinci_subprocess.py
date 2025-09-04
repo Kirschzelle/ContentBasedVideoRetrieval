@@ -59,6 +59,7 @@ def send_clip(video_path, start_frame, end_frame, keyframe_frame, fps):
             return {'success': False, 'error': 'No project open in DaVinci Resolve'}
         
         media_pool = project.GetMediaPool()
+        resolve.OpenPage("edit")
         
         media_items = media_pool.ImportMedia([video_path])
         if not media_items:
@@ -70,14 +71,15 @@ def send_clip(video_path, start_frame, end_frame, keyframe_frame, fps):
         end_tc = frame_to_timecode(end_frame, fps)
         keyframe_tc = frame_to_timecode(keyframe_frame, fps)
         
-        media_item.SetClipProperty("Start TC", start_tc)
-        media_item.SetClipProperty("End TC", end_tc)
+        timeline = project.GetCurrentTimeline()
+        if timeline:
+            timeline.SetCurrentTimecode(keyframe_tc)
         
-        resolve.OpenPage("edit")
+        media_pool.SetSelectedClip(media_item)
         
         return {
             'success': True,
-            'message': f'Clip loaded in DaVinci at {keyframe_tc}',
+            'message': f'Media imported and selected at {keyframe_tc}',
             'video_name': os.path.basename(video_path),
             'timecode': keyframe_tc
         }
