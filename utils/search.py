@@ -127,22 +127,22 @@ class Searcher:
         if filters is None:
             filters = {}
 
-        # PHASE 1: Get candidates using combined search with filter awareness
-        if self.combined_index is not None:
-            # Use combined vector search with filters integrated
-            combined_candidates = self._search_combined_vectors(query, filters)
-        else:
-            # Fallback to individual index search (original approach)
-            query_embedding = self.encode_text(query)
-            clip_ids = self.clip_index.get_nns_by_vector(query_embedding, 5000)
-            combined_candidates = set(self.id_map[i] for i in clip_ids)
-            
-            # Add transcript search results
-            transcript_ids_embedding = self._search_transcript_embeddings(query)
-            transcript_ids_text = self._search_transcripts(query, threshold=0.3)
-            combined_candidates = combined_candidates | transcript_ids_embedding | transcript_ids_text
+        # PHASE 1: Get candidates from individual search methods (better than combined approach)
+        
+        # Get CLIP text embedding candidates 
+        query_embedding = self.encode_text(query)
+        clip_ids = self.clip_index.get_nns_by_vector(query_embedding, 1000)
+        clip_candidates = set(self.id_map[i] for i in clip_ids)
+        
+        # Get transcript search results
+        transcript_ids_embedding = self._search_transcript_embeddings(query)
+        transcript_ids_text = self._search_transcripts(query, threshold=-2.0)
+        transcript_candidates = transcript_ids_embedding | transcript_ids_text
+        
+        # Merge all search candidates
+        all_candidates = clip_candidates | transcript_candidates
 
-        # PHASE 2: Apply filter refinement using individual indices for additional precision
+        # PHASE 2: Apply filter refinement 
         if filters:
             filter_ids = set()
             for kf, categories in filters.items():
@@ -174,25 +174,22 @@ class Searcher:
                             transcript_ids = self.transcript_index.get_nns_by_vector(transcript_emb, 1000)
                             filter_ids.update(self.transcript_id_map[i] for i in transcript_ids)
             
-            # Intersect combined candidates with filter results for better precision
-            all_candidate_ids = combined_candidates.intersection(filter_ids) if filter_ids else combined_candidates
+            # Intersect candidates with filter results
+            all_candidate_ids = all_candidates.intersection(filter_ids) if filter_ids else all_candidates
         else:
-            all_candidate_ids = combined_candidates
+            all_candidate_ids = all_candidates
             
         all_candidate_ids.difference_update(returned_ids)
 
+        # PHASE 3: Score all candidates using multi-modal similarity calculation
         scored = []
         for kf_id in all_candidate_ids:
             kf = self.kf_lookup.get(kf_id)
             if not kf:
                 continue
                 
-            # Always use combined scoring when combined index available
-            if self.combined_index is not None:
-                score = self._compute_combined_similarity(query, kf)
-            else:
-                query_embedding = self.encode_text(query) if 'query_embedding' not in locals() else query_embedding
-                score = self.compute_total_similarity(query_embedding, kf, filters, query)
+            # Use the original multi-modal similarity calculation with proper weighting
+            score = self.compute_total_similarity(query_embedding, kf, filters, query)
                 
             if score is not None:
                 scored.append((score, kf))
@@ -200,6 +197,7 @@ class Searcher:
         scored.sort(key=lambda x: x[0])
         pruned = prune_similar_results([s[1] for s in scored])
         return pruned[:top_k]
+
 
     def _search_transcripts(self, query: str, threshold: float = 0.3) -> set:
         """
@@ -227,15 +225,18 @@ class Searcher:
             if kf.transcript_confidence is not None and kf.transcript_confidence < threshold:
                 continue
                 
-            # Check primary transcript text
-            transcript_words = set(kf.transcript_text.lower().split())
+            # Check primary transcript text (remove punctuation for better matching)
+            import re
+            clean_transcript = re.sub(r'[^\w\s]', ' ', kf.transcript_text.lower())
+            transcript_words = set(clean_transcript.split())
             if query_words.intersection(transcript_words):
                 matching_ids.add(kf_id)
                 continue
                 
             # Also check context text for broader matches
             if kf.transcript_context and kf.transcript_context.strip():
-                context_words = set(kf.transcript_context.lower().split())
+                clean_context = re.sub(r'[^\w\s]', ' ', kf.transcript_context.lower())
+                context_words = set(clean_context.split())
                 if query_words.intersection(context_words):
                     matching_ids.add(kf_id)
         
@@ -356,9 +357,11 @@ class Searcher:
                 query_embedding, transcript_embedding, query_type, filter_vectors
             )
             
-            # Search combined index
-            combined_annoy_ids = self.combined_index.get_nns_by_vector(combined_query, 2000)
-            combined_keyframe_ids = set(self.combined_id_map[i] for i in combined_annoy_ids)
+            # Search combined index - preserve Annoy ranking order!
+            max_combined_candidates = min(1000, len(self.combined_id_map))
+            combined_annoy_ids = self.combined_index.get_nns_by_vector(combined_query, max_combined_candidates)
+            # Use list to preserve Annoy ranking order, not set!
+            combined_keyframe_ids = [self.combined_id_map[i] for i in combined_annoy_ids]
             
             return combined_keyframe_ids
             
@@ -445,23 +448,31 @@ class Searcher:
             Similarity score (lower is better)
         """
         try:
-            # For combined vector approach, we mainly rely on the Annoy ranking
-            # But we can add small adjustments based on confidence/quality
             features = candidate_kf.get_features_from_keyframe()
             
-            # Base score from Annoy ranking (we'll use a neutral score)
-            base_score = 0.5
+            # Check for transcript text match (moderate boost, not override)
+            transcript_boost = 1.0  # Default: no boost
+            if candidate_kf.transcript_text:
+                import re
+                query_words = set(query.lower().split())
+                clean_transcript = re.sub(r'[^\w\s]', ' ', candidate_kf.transcript_text.lower())
+                transcript_words = set(clean_transcript.split())
+                
+                if query_words.intersection(transcript_words):
+                    # Moderate boost for transcript matches
+                    match_ratio = len(query_words.intersection(transcript_words)) / len(query_words)
+                    confidence_boost = max(0.3, (candidate_kf.transcript_confidence + 5) / 5) if candidate_kf.transcript_confidence else 0.3
+                    transcript_boost = 0.7 - (0.3 * match_ratio * confidence_boost)  # 30-70% of original score
             
-            # Adjust for transcript confidence if available
-            transcript_data = features.get('transcript', {})
-            if transcript_data.get('text'):
-                confidence = transcript_data.get('confidence', 0.8)
-                if confidence is not None and confidence > 0.7:
-                    base_score *= 0.9  # Slight boost for high confidence
-                elif confidence is not None and confidence < 0.4:
-                    base_score *= 1.1  # Slight penalty for low confidence
+            # Use Annoy ranking from combined vector search (incorporates all modalities)
+            # The combined vector already includes CLIP + transcript + DINO + colors + objects
+            # So we should trust the Annoy distance/ranking rather than recomputing
+            base_score = 0.5  # Neutral base score - Annoy ranking determines order
+            
+            # Apply transcript boost to base score (for exact text matches)  
+            final_score = base_score * transcript_boost
                     
-            return base_score
+            return final_score
             
         except Exception:
             return 0.5  # Neutral score if scoring fails

@@ -25,12 +25,9 @@
                 Your browser does not support the video tag.
             </video>
         </div>
-        <button id="submit" type="submit" class="submit-button" data-video-id="{{ keyframe.clip.video.file_name }}">Submit to the DRES Server</button>
         <button class="davinci-btn" onclick="window.daVinciIntegration?.sendToDaVinci('{{ keyframe.id }}', this)">Send to DaVinci</button>
-        <div id="submit-result-message" class="submit-result"></div>
     </section>
 </div>
 <script src="{% static 'js/video-preview.js' %}"></script>
-<script src="{% static 'js/dres-submit.js' %}"></script>
 <script src="{% static 'js/davinci_integration.js' %}"></script>
 {% endblock %}

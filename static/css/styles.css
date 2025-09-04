@@ -180,7 +180,6 @@ h2 {
         height: 1440px;
     }
 
-.submit-button,
 .reset-button {
     margin-top: 25px;
     padding: 10px 20px;
@@ -193,15 +192,6 @@ h2 {
     transition: background-color 0.3s ease;
 }
 
-.submit-button:hover {
-    background-color: #0c75d1;
-}
-
-.submit-result {
-    margin-top: 1em;
-    font-weight: bold;
-    font-size: 1.1em;
-}
 
 .drag-drop-area {
     border: 2px dashed #aaa;

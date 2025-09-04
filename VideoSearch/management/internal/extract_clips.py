@@ -143,7 +143,10 @@ def extract_clips(model, video, video_path, pbar=None, **kwargs):
     # Debug: Check prediction vs frame count mismatch
     pred_len = len(single_frame_predictions)
     if pred_len != video.frame_count:
-        if not pbar:  # Only print detailed debug info when NOT using progress bar
+        if pbar:
+            tqdm.write(f"[WARNING] Prediction length ({pred_len}) != video frame count ({video.frame_count}) for {video_path.name}")
+            tqdm.write(f"[INFO] Verifying actual frame count...")
+        else:
             print(f"WARNING: Prediction length ({pred_len}) != video frame count ({video.frame_count}) for {video_path.name}")
             print(f"Verifying actual frame count...")
         
@@ -152,21 +155,30 @@ def extract_clips(model, video, video_path, pbar=None, **kwargs):
         
         if actual_frame_count is not None:
             if actual_frame_count == pred_len:
-                if not pbar:
+                if pbar:
+                    tqdm.write(f"[INFO] TransNetV2 is correct ({pred_len} frames), updating video metadata")
+                else:
                     print(f"INFO: TransNetV2 is correct ({pred_len} frames), updating video metadata")
                 video.frame_count = pred_len
                 video.save()
             elif actual_frame_count == video.frame_count:
-                if not pbar:
+                if pbar:
+                    tqdm.write(f"[INFO] Video metadata is correct ({video.frame_count} frames), TransNetV2 processing incomplete")
+                else:
                     print(f"INFO: Video metadata is correct ({video.frame_count} frames), TransNetV2 processing incomplete")
             else:
-                if not pbar:
+                if pbar:
+                    tqdm.write(f"[INFO] All three counts differ - Metadata: {video.frame_count}, TransNetV2: {pred_len}, Actual: {actual_frame_count}")
+                    tqdm.write(f"[INFO] Using actual frame count ({actual_frame_count}) as ground truth")
+                else:
                     print(f"INFO: All three counts differ - Metadata: {video.frame_count}, TransNetV2: {pred_len}, Actual: {actual_frame_count}")
                     print(f"Using actual frame count ({actual_frame_count}) as ground truth")
                 video.frame_count = actual_frame_count
                 video.save()
         else:
-            if not pbar:
+            if pbar:
+                tqdm.write(f"[WARNING] Could not verify actual frame count, proceeding with existing logic")
+            else:
                 print(f"WARNING: Could not verify actual frame count, proceeding with existing logic")
 
     settings = {k: kwargs.get(k, v) for k, v in DEFAULT_CLIP_EXTRACTION_SETTINGS.items()}
@@ -195,8 +207,13 @@ def extract_clips(model, video, video_path, pbar=None, **kwargs):
         last_start, last_end = clips[-1]
         if last_end > safe_max_frame:
             clips[-1] = (last_start, safe_max_frame)
-            if not pbar:
-                frame_gap = video.frame_count - pred_len
+            frame_gap = video.frame_count - pred_len
+            if pbar:
+                if frame_gap < 0:
+                    tqdm.write(f"[INFO] Capped last clip from {last_end} to {safe_max_frame} (TransNetV2 over-processed by {abs(frame_gap)} frames)")
+                else:
+                    tqdm.write(f"[INFO] Extended last clip by {frame_gap} frames to frame {safe_max_frame} (verified)")
+            else:
                 if frame_gap < 0:
                     print(f"INFO: Capped last clip from {last_end} to {safe_max_frame} (TransNetV2 over-processed by {abs(frame_gap)} frames)")
                 else:
@@ -254,10 +271,14 @@ def multipass_predictions_to_scenes(
         # Make sure the last scene covers all remaining frames
         scenes.append((start, len(predictions) - 1))
     
-    # Debug: Print scene coverage info (only when not using progress bar)
-    if scenes and not (hasattr(multipass_predictions_to_scenes, '_pbar') and multipass_predictions_to_scenes._pbar):
+    # Debug: Print scene coverage info
+    if scenes:
         total_frames = sum(end - start + 1 for start, end in scenes)
-        print(f"DEBUG: Created {len(scenes)} scenes covering {total_frames} frames, predictions length: {len(predictions)}")
+        pbar = getattr(multipass_predictions_to_scenes, '_pbar', None)
+        if pbar:
+            tqdm.write(f"[DEBUG] Created {len(scenes)} scenes covering {total_frames} frames, predictions length: {len(predictions)}")
+        else:
+            print(f"DEBUG: Created {len(scenes)} scenes covering {total_frames} frames, predictions length: {len(predictions)}")
 
     return scenes
 
@@ -286,6 +307,8 @@ def get_actual_frame_count(video_path, pbar=None):
         return frame_count if frame_count > 0 else None
         
     except (subprocess.CalledProcessError, Exception) as e:
-        if not pbar:
+        if pbar:
+            tqdm.write(f"[ERROR] Could not get actual frame count for {video_path}: {e}")
+        else:
             print(f"ERROR: Could not get actual frame count for {video_path}: {e}")
         return None

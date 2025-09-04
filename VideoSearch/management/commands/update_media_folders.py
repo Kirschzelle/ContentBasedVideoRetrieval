@@ -152,7 +152,7 @@ class Command(BaseCommand):
                     self.stdout.write(">> Extracting Audio Transcripts...")
                     from VideoSearch.management.internal.extract_audio_transcripts import Command as ExtractAudioTranscriptsCommand
                     cmd = ExtractAudioTranscriptsCommand()
-                    cmd.handle(model_size="base", context_window=5.0)
+                    cmd.handle(model_size="base", context_window=5.0, batch_videos=1)
 
                 if videos_needing_processing['no_objects'] > 0:
                     self.stdout.write(">> Extracting Objects...")

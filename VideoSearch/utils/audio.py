@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import numpy as np
 from dataclasses import dataclass
+import warnings
 
 @dataclass
 class TranscriptSegment:
@@ -35,7 +36,11 @@ class AudioTranscriber:
         if self.model is None:
             if self.command:
                 self.command.stdout.write(f"   Loading Whisper model: {self.model_size}")
-            self.model = whisper.load_model(self.model_size)
+            
+            # Suppress Triton kernel warnings on Windows
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="Failed to launch Triton kernels")
+                self.model = whisper.load_model(self.model_size)
     
     def extract_audio(self, video_path: str) -> str:
         """
@@ -97,12 +102,22 @@ class AudioTranscriber:
             # Transcribe with word-level timestamps
             if self.command:
                 self.command.stdout.write("   Running Whisper transcription...")
+            
+            # Suppress Triton kernel warnings during transcription
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="Failed to launch Triton kernels")
                 
-            result = self.model.transcribe(
-                audio_path,
-                word_timestamps=True,
-                verbose=False
-            )
+                # Try transcription with language detection first
+                result = self.model.transcribe(
+                    audio_path,
+                    word_timestamps=True,
+                    verbose=False
+                )
+                
+                # Log detected language
+                detected_lang = result.get("language", "unknown")
+                if self.command:
+                    self.command.stdout.write(f"   Detected language: {detected_lang}")
             
             segments = []
             for segment in result["segments"]:
