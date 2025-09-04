@@ -3,9 +3,9 @@
 
 {% block content %}
 <div class="detailed-content">
-    <a href="/?{{ query_string }}" class="home-button" id="back-link">
+    <button onclick="history.back()" class="home-button" id="back-link">
         <i class="fas fa-arrow-circle-left"></i>
-    </a>
+    </button>
     <section class="keyframe">
         <h4>Video-Name: {{ keyframe.clip.video.file_name }}</h4>
         <div class="clip-card preview-container" data-start-frame="{{ keyframe.frame }}" data-clip-start-frame="{{ keyframe.clip.start_frame }}" data-clip-end-frame="{{ keyframe.clip.end_frame }}" data-fps="{{ keyframe.clip.video.fps }}">

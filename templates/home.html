@@ -54,6 +54,7 @@
     </div>
 </div>
 
-<script src="{% static 'js/drag-images.js' %}"></script>
-<script src="{% static 'js/color-filter.js' %}"></script>
+<script src="{% static 'js/progressive-search.js' %}?t={% now 'U' %}"></script>
+<script src="{% static 'js/drag-images.js' %}?t={% now 'U' %}"></script>
+<script src="{% static 'js/color-filter.js' %}?t={% now 'U' %}"></script>
 {% endblock %}
