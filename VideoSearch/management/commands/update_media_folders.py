@@ -124,28 +124,21 @@ class Command(BaseCommand):
                 needs_web_proxy = not video.web_path or not Path(video.web_path).exists()
                 if needs_web_proxy:
                     self.stdout.write("   >> Creating web proxy...")
-                    from VideoSearch.management.internal.create_web_videos import Command as CreateWebVideosCommand
-                    cmd = CreateWebVideosCommand()
-                    cmd.handle(
-                        output_dir='data/videos_web',
-                        max_height=480,
-                        quality=18,
-                        force=False,
-                        replace_originals=False
-                    )
+                    if self.create_web_proxy_for_video(video):
+                        video.refresh_from_db()
+                    else:
+                        self.stdout.write("   >> ERROR: Failed to create web proxy, skipping video")
+                        continue
                 else:
                     self.stdout.write("   >> Web proxy already exists")
                 
                 has_clips = Clip.objects.filter(video=video).exists()
                 if not has_clips:
                     self.stdout.write("   >> Extracting clips...")
-                    from VideoSearch.management.internal.extract_clips import Command as ExtractClipsCommand
-                    from VideoSearch.management.internal.extract_clips import process_video_for_clips
-                    try:
-                        result = process_video_for_clips(video.id, {}, None)
-                        self.stdout.write(f"   >> {result}")
-                    except Exception as e:
-                        self.stdout.write(f"   >> ERROR extracting clips: {e}")
+                    if self.extract_clips_for_video(video):
+                        pass
+                    else:
+                        self.stdout.write("   >> ERROR: Failed to extract clips, skipping video")
                         continue
                 else:
                     self.stdout.write("   >> Clips already exist")
@@ -155,13 +148,10 @@ class Command(BaseCommand):
                     keyframes_exist = Keyframe.objects.filter(clip__video=video).exists()
                     if not keyframes_exist:
                         self.stdout.write("   >> Processing clips (keyframes + audio + OCR + objects)...")
-                        from django.core.management import call_command
-                        try:
-                            call_command("process_clips_v2", 
-                                       whisper_model="base", 
-                                       workers=worker_keyframes)
-                        except Exception as e:
-                            self.stdout.write(f"   >> ERROR processing clips: {e}")
+                        if self.process_clips_for_video(video):
+                            pass
+                        else:
+                            self.stdout.write("   >> ERROR: Failed to process clips, skipping video")
                             continue
                     else:
                         self.stdout.write("   >> Keyframes already processed")
@@ -336,3 +326,74 @@ class Command(BaseCommand):
             
         except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError):
             return None
+
+    def create_web_proxy_for_video(self, video):
+        try:
+            import subprocess
+            input_path = Path(video.file_path)
+            output_dir = Path('data/videos_web')
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"{input_path.stem}.mp4"
+            
+            if output_path.exists():
+                video.web_path = str(output_path)
+                video.save()
+                return True
+                
+            if not input_path.exists():
+                self.stdout.write(f"   >> ERROR: Source file not found: {input_path}")
+                return False
+            
+            cmd = [
+                "ffmpeg", "-i", str(input_path),
+                "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+                "-vf", "scale=-2:480:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                "-profile:v", "main", "-level", "3.1", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "96k", "-ac", "2",
+                "-movflags", "+faststart", "-avoid_negative_ts", "make_zero",
+                "-y", str(output_path)
+            ]
+            
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            video.web_path = str(output_path)
+            video.save()
+            return True
+            
+        except Exception as e:
+            self.stdout.write(f"   >> ERROR creating web proxy: {e}")
+            return False
+    
+    def extract_clips_for_video(self, video):
+        try:
+            from VideoSearch.management.internal.extract_clips import process_video_for_clips
+            result = process_video_for_clips(video.id, {}, None)
+            self.stdout.write(f"   >> {result}")
+            return True
+        except Exception as e:
+            self.stdout.write(f"   >> ERROR extracting clips: {e}")
+            return False
+    
+    def process_clips_for_video(self, video):
+        try:
+            from VideoSearch.models import Clip
+            from VideoSearch.utils.clip_processor import ClipProcessor
+            
+            clips = Clip.objects.filter(video=video)
+            if not clips.exists():
+                return True
+            
+            processor = ClipProcessor(whisper_model_size="base", command=self)
+            
+            for clip in clips:
+                try:
+                    keyframes = processor.process_clip(clip)
+                    self.stdout.write(f"   >> Clip {clip.id}: {len(keyframes)} keyframes created")
+                except Exception as e:
+                    self.stdout.write(f"   >> ERROR processing clip {clip.id}: {e}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.stdout.write(f"   >> ERROR in clip processing: {e}")
+            return False

@@ -26,6 +26,8 @@ class ClipProcessor:
         sentences = self._extract_audio_sentences(clip)
         keyframes = self._create_sentence_keyframes(clip, sentences)
         
+        keyframes.extend(self._create_baseline_keyframes(clip))
+        
         for keyframe in keyframes:
             self._extract_all_features(keyframe)
         
@@ -82,6 +84,11 @@ class ClipProcessor:
     def _create_sentence_keyframes(self, clip: Clip, sentences: List[Dict]) -> List[Keyframe]:
         keyframes = []
         for sentence_data in sentences:
+            if Keyframe.objects.filter(clip=clip, frame=sentence_data['frame']).exists():
+                if self.command:
+                    self.command.stdout.write(f"Skipping sentence keyframe at frame {sentence_data['frame']} - already exists")
+                continue
+                
             try:
                 transcript_embedding = None
                 if sentence_data['context']:
@@ -104,15 +111,54 @@ class ClipProcessor:
         
         return keyframes
     
+    def _create_baseline_keyframes(self, clip: Clip) -> List[Keyframe]:
+        keyframes = []
+        
+        start_frame = clip.start_frame
+        end_frame = clip.end_frame
+        
+        for frame in [start_frame, end_frame]:
+            if Keyframe.objects.filter(clip=clip, frame=frame).exists():
+                if self.command:
+                    self.command.stdout.write(f"Skipping baseline keyframe at frame {frame} - already exists")
+                continue
+                
+            try:
+                keyframe = Keyframe.objects.create(
+                    clip=clip,
+                    frame=frame,
+                    embedding_clip=b'',
+                    transcript_text="",
+                    transcript_confidence=0.0,
+                    transcript_context="",
+                    transcript_embedding=None
+                )
+                keyframes.append(keyframe)
+                
+                if self.command:
+                    self.command.stdout.write(f"Created baseline keyframe at frame {frame}")
+                    
+            except Exception as e:
+                if self.command:
+                    self.command.stdout.write(f"Failed to create baseline keyframe at frame {frame}: {e}")
+        
+        return keyframes
+    
     def _extract_all_features(self, keyframe: Keyframe):
         try:
             image = keyframe.clip.get_frame_image(keyframe.frame)
             if image is None:
                 if self.command:
-                    self.command.stdout.write(f"Failed to extract image for keyframe {keyframe.id}")
+                    self.command.stdout.write(f"Failed to extract image for keyframe {keyframe.id} - deleting keyframe")
+                keyframe.delete()
                 return
             
             features = self.visual_extractor.extract_features(image)
+            if not features or features.get('clip_emb') is None:
+                if self.command:
+                    self.command.stdout.write(f"Failed to extract CLIP embedding for keyframe {keyframe.id} - deleting keyframe")
+                keyframe.delete()
+                return
             
             keyframe.embedding_clip = Keyframe.compress_array(features['clip_emb'])
             keyframe.embedding_dino = Keyframe.compress_array(features['dino_emb']) if features.get('dino_emb') is not None else None
@@ -163,6 +209,11 @@ class ClipProcessor:
                 gaps_to_fill.append(midpoint_frame)
         
         for frame in gaps_to_fill:
+            if Keyframe.objects.filter(clip=clip, frame=frame).exists():
+                if self.command:
+                    self.command.stdout.write(f"Skipping gap keyframe at frame {frame} - already exists")
+                continue
+                
             try:
                 gap_keyframe = Keyframe.objects.create(
                     clip=clip,

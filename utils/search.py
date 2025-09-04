@@ -152,6 +152,9 @@ class Searcher:
                 ocr_keyframes = [self.kf_lookup[kf_id] for kf_id in ocr_results if kf_id in self.kf_lookup]
                 session_state['buffers'][index_name] = ocr_keyframes[:buffer_size]
                 session_state['positions'][index_name] = len(ocr_keyframes)
+            elif index_name in ["dino", "colors", "objects", "ocr_embedding"]:
+                session_state['buffers'][index_name] = []
+                session_state['positions'][index_name] = 0
             else:
                 index, id_map = index_data
                 annoy_ids = index.get_nns_by_vector(query_embedding, buffer_size)
@@ -192,15 +195,13 @@ class Searcher:
     def _refill_buffer(self, buffer_name: str, session_state: dict, query: str):
         current_pos = session_state['positions'][buffer_name]
         
-        if buffer_name in ["transcript_text", "ocr_text"]:
+        if buffer_name in ["transcript_text", "ocr_text", "dino", "colors", "objects", "ocr_embedding"]:
             return
         
         query_embedding = self.encode_text(query)
         
         if buffer_name == "clip":
             index, id_map = self.clip_index, self.id_map
-        elif buffer_name == "dino":
-            index, id_map = self.dino_index, self.dino_id_map
         elif buffer_name == "colors":
             index, id_map = self.color_index, self.color_id_map
         elif buffer_name == "objects":

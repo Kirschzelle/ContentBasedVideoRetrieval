@@ -68,15 +68,16 @@ class OCRExtractor:
             
             bbox_data = []
             for bbox, text, conf in filtered_results:
+                bbox_converted = [[float(point[0]), float(point[1])] for point in bbox]
                 bbox_data.append({
-                    'bbox': bbox,
+                    'bbox': bbox_converted,
                     'text': text.strip(),
-                    'confidence': conf
+                    'confidence': float(conf)
                 })
             
             return {
                 'text': combined_text,
-                'confidence': avg_confidence,
+                'confidence': float(avg_confidence),
                 'bboxes': bbox_data
             }
             

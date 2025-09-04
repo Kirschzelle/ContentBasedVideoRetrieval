@@ -73,11 +73,13 @@ def api_search_view(request):
         search_mode=search_mode,
         session_state=session_state, 
         filters=filters,
-        batch_size=10
+        batch_size=100
     )
     
-    serializable_state = search_result['session_state'].copy()
-    serializable_state['returned_ids'] = list(serializable_state['returned_ids'])
+    serializable_state = {
+        'returned_ids': list(search_result['session_state']['returned_ids']),
+        'positions': search_result['session_state']['positions'].copy()
+    }
     request.session['search_state'] = serializable_state
     
     if not search_result['results']:

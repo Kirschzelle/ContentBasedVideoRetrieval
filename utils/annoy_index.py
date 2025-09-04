@@ -24,8 +24,11 @@ def build_annoy_index(feature_name, kf_lookup, n_trees=700):
     i = 0
 
     for kf_id, kf in kf_lookup.items():
-        vec = kf.get_features_from_keyframe().get(feature_name)
-        if vec is None or np.linalg.norm(vec) == 0:
+        try:
+            vec = kf.get_features_from_keyframe().get(feature_name)
+            if vec is None or np.linalg.norm(vec) == 0:
+                continue
+        except Exception:
             continue
 
         if dim is None:
