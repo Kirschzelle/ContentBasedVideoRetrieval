@@ -6,19 +6,9 @@
     <a href="/?{{ query_string }}" class="home-button" id="back-link">
         <i class="fas fa-arrow-circle-left"></i>
     </a>
-    <div class="keyframe-information">
-        <p>Video-ID: <span id="mediaItemName">{{ keyframe.clip.video.file_name }}</span></p>
-        <p>
-            Start time in milliseconds:
-            <input type="number" id="startMilliseconds" step="1" min="0" value="" />
-        </p>
-        <p>End time in milliseconds: <span id="endMilliseconds"></span></p>
-        <button id="reset" type="submit" class="reset-button"  data-start-frame="{{ keyframe.frame }}" data-clip-start-frame="{{ keyframe.clip.start_frame }}" data-fps="{{ keyframe.clip.video.fps }}">Reset Starttime</button>
-    </div>
     <section class="keyframe">
-        <h4>Your Keyframe:</h4>
-        <div class="clip-card preview-container video-preview" data-keyframe-id="{{ keyframe.id }}" data-start-frame="{{ keyframe.frame }}" data-clip-start-frame="{{ keyframe.clip.start_frame }}" data-clip-end-frame="{{ keyframe.clip.end_frame }}" data-fps="{{ keyframe.clip.video.fps }}">
-            <img src="{{ keyframe_img }}" alt="Keyframe" class="thumbnail">
+        <h4>Video-Name: {{ keyframe.clip.video.file_name }}</h4>
+        <div class="clip-card preview-container" data-start-frame="{{ keyframe.frame }}" data-clip-start-frame="{{ keyframe.clip.start_frame }}" data-clip-end-frame="{{ keyframe.clip.end_frame }}" data-fps="{{ keyframe.clip.video.fps }}">
             <video id="{{ keyframe.clip.video.id }}" alt="Video" class="preview-video" preload="auto" loop playsinline controls>
                 <source src="{{ keyframe.clip.video.media_url }}" type="video/mp4"/>
                 <source src="{{ keyframe.clip.video.media_url }}"/>
@@ -28,6 +18,6 @@
         <button class="davinci-btn" onclick="window.daVinciIntegration?.sendToDaVinci('{{ keyframe.id }}', this)">Send to DaVinci</button>
     </section>
 </div>
-<script src="{% static 'js/video-preview.js' %}"></script>
-<script src="{% static 'js/davinci_integration.js' %}"></script>
+<script src="{% static 'js/video-preview.js' %}?t={% now 'U' %}"></script>
+<script src="{% static 'js/davinci_integration.js' %}?t={% now 'U' %}"></script>
 {% endblock %}
