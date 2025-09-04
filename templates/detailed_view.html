@@ -15,7 +15,7 @@
                 Your browser does not support the video tag.
             </video>
         </div>
-        <button class="davinci-btn" onclick="window.daVinciIntegration?.sendToDaVinci('{{ keyframe.id }}', this)">Send to DaVinci</button>
+        <button class="davinci-btn" onclick="if(window.daVinciIntegration && typeof window.daVinciIntegration.sendToDaVinci === 'function') { window.daVinciIntegration.sendToDaVinci('{{ keyframe.id }}', this); } else { alert('DaVinci integration not loaded yet. Please refresh the page.'); }">Send to DaVinci</button>
     </section>
 </div>
 <script src="{% static 'js/video-preview.js' %}?t={% now 'U' %}"></script>

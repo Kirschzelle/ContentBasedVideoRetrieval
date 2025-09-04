@@ -165,35 +165,11 @@ def send_to_davinci(request):
 
 def check_davinci_status(request):
     """
-    Check if DaVinci Resolve is available and ready.
+    Check if DaVinci Resolve is available and ready via bridge server.
     """
-    try:
-        import DaVinciResolveScript as dvr
-        resolve = dvr.scriptapp("Resolve")
-        
-        if resolve:
-            project = resolve.GetProjectManager().GetCurrentProject()
-            return JsonResponse({
-                'available': True,
-                'project_open': project is not None,
-                'project_name': project.GetName() if project else None
-            })
-        else:
-            return JsonResponse({
-                'available': False,
-                'error': 'DaVinci Resolve not running'
-            })
-            
-    except ImportError:
-        return JsonResponse({
-            'available': False,
-            'error': 'DaVinci Resolve API not installed'
-        })
-    except Exception as e:
-        return JsonResponse({
-            'available': False,
-            'error': str(e)
-        })
+    from VideoSearch.utils.davinci_integration import check_davinci_status as check_status
+    result = check_status()
+    return JsonResponse(result)
 
 # External Frame Upload Views
 

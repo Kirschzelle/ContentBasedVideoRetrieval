@@ -18,7 +18,12 @@ class ImageEmbedder:
         self.mode = mode
 
         self._log(f"[Embedding] Loading CLIP model: {clip_model_name}", "info")
-        self.clip_model = CLIPModel.from_pretrained(clip_model_name).to(self.device)
+        try:
+            self.clip_model = CLIPModel.from_pretrained(clip_model_name).to(self.device)
+        except NotImplementedError:
+            model = CLIPModel.from_pretrained(clip_model_name)
+            self.clip_model = model.to_empty(device=self.device)
+            self.clip_model.load_state_dict(model.state_dict())
         self.clip_processor = CLIPProcessor.from_pretrained(clip_model_name)
 
         self.dino_model = None

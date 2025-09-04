@@ -20,7 +20,12 @@ class Searcher:
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
-        self.model = CLIPModel.from_pretrained(clip_model_name).to(self.device)
+        try:
+            self.model = CLIPModel.from_pretrained(clip_model_name).to(self.device)
+        except NotImplementedError:
+            model = CLIPModel.from_pretrained(clip_model_name)
+            self.model = model.to_empty(device=self.device)
+            self.model.load_state_dict(model.state_dict())
 
         self.last_query = None
         self.last_embedding = None
