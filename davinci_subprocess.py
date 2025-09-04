@@ -61,6 +61,24 @@ def send_clip(video_path, start_frame, end_frame, keyframe_frame, fps):
         media_pool = project.GetMediaPool()
         resolve.OpenPage("edit")
         
+        root_folder = media_pool.GetRootFolder()
+        auto_import_folder = None
+        
+        try:
+            subfolders = root_folder.GetSubFolderList()
+            for folder in subfolders:
+                if folder.GetName() == "AutoImport":
+                    auto_import_folder = folder
+                    break
+        except:
+            pass
+        
+        if not auto_import_folder:
+            auto_import_folder = media_pool.AddSubFolder(root_folder, "AutoImport")
+        
+        if auto_import_folder:
+            media_pool.SetCurrentFolder(auto_import_folder)
+        
         media_items = media_pool.ImportMedia([video_path])
         if not media_items:
             return {'success': False, 'error': f'Could not import video file: {video_path}'}
@@ -71,11 +89,10 @@ def send_clip(video_path, start_frame, end_frame, keyframe_frame, fps):
         end_tc = frame_to_timecode(end_frame, fps)
         keyframe_tc = frame_to_timecode(keyframe_frame, fps)
         
-        timeline = project.GetCurrentTimeline()
-        if timeline:
-            timeline.SetCurrentTimecode(keyframe_tc)
-        
+        media_item.SetMarkInOut(start_frame, end_frame)
         media_pool.SetSelectedClip(media_item)
+        
+        resolve.OpenPage("edit")
         
         return {
             'success': True,
