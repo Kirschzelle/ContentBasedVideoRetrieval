@@ -324,6 +324,12 @@ class Keyframe(models.Model):
     transcript_context = models.TextField(null=True, blank=True)
     transcript_embedding = models.BinaryField(null=True, blank=True)
 
+    # OCR text detection
+    ocr_text = models.TextField(null=True, blank=True)
+    ocr_confidence = models.FloatField(null=True, blank=True)
+    ocr_bboxes = models.JSONField(null=True, blank=True)
+    ocr_embedding = models.BinaryField(null=True, blank=True)
+
     class Meta:
         unique_together = ("clip", "frame")
 
@@ -375,6 +381,9 @@ class Keyframe(models.Model):
     def load_transcript_embedding(self):
         return self.decompress_array(self.transcript_embedding) if self.transcript_embedding else None
 
+    def load_ocr_embedding(self):
+        return self.decompress_array(self.ocr_embedding) if self.ocr_embedding else None
+
     def get_transcript_data(self) -> dict:
         """Returns transcript data for this keyframe."""
         return {
@@ -393,7 +402,8 @@ class Keyframe(models.Model):
             "colorfulness": self.colorfulness,
             "object_vector": self.load_object_vector(),
             "transcript_embedding": self.load_transcript_embedding(),
-            "transcript": self.get_transcript_data()
+            "transcript": self.get_transcript_data(),
+            "ocr_embedding": self.load_ocr_embedding()
         }
 
     @classmethod

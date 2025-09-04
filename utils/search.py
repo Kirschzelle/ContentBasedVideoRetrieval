@@ -22,7 +22,12 @@ class Searcher:
         try:
             logger.info(f"Loading {clip_model_name} from local cache")
             self.tokenizer = CLIPTokenizer.from_pretrained(clip_model_name, local_files_only=True)
-            self.model = CLIPModel.from_pretrained(clip_model_name, local_files_only=True).to(self.device)
+            try:
+                self.model = CLIPModel.from_pretrained(clip_model_name, local_files_only=True).to(self.device)
+            except NotImplementedError:
+                model = CLIPModel.from_pretrained(clip_model_name, local_files_only=True)
+                self.model = model.to_empty(device=self.device)
+                self.model.load_state_dict(model.state_dict())
         except (OSError, ValueError):
             logger.info(f"Local cache not found, downloading {clip_model_name}")
             self.tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
@@ -42,7 +47,8 @@ class Searcher:
             .only("id", "clip__video__id", "clip__id", "frame",
                   "embedding_clip", "embedding_dino", "histogram_hsv",
                   "dominant_colors", "colorfulness", "object_vector",
-                  "transcript_text", "transcript_confidence", "transcript_context", "transcript_embedding")
+                  "transcript_text", "transcript_confidence", "transcript_context", "transcript_embedding",
+                  "ocr_text", "ocr_confidence", "ocr_bboxes", "ocr_embedding")
         }
 
         self.clip_index, self.id_map = build_annoy_index(
@@ -62,6 +68,11 @@ class Searcher:
 
         self.object_index, self.object_id_map = build_annoy_index(
             feature_name="object_vector",
+            kf_lookup=self.kf_lookup
+        )
+
+        self.ocr_index, self.ocr_id_map = build_annoy_index(
+            feature_name="ocr_embedding",
             kf_lookup=self.kf_lookup
         )
 
@@ -105,6 +116,8 @@ class Searcher:
             indices['clip'] = (self.clip_index, self.id_map)
             indices['colors'] = (self.color_index, self.color_id_map)
             indices['objects'] = (self.object_index, self.object_id_map)
+            indices['ocr_text'] = None
+            indices['ocr_embedding'] = (self.ocr_index, self.ocr_id_map)
             
         if search_mode in ["audio", "balanced"]:
             indices['transcript_text'] = None
@@ -134,6 +147,11 @@ class Searcher:
                 text_keyframes = [self.kf_lookup[kf_id] for kf_id in text_results if kf_id in self.kf_lookup]
                 session_state['buffers'][index_name] = text_keyframes[:buffer_size]
                 session_state['positions'][index_name] = len(text_keyframes)
+            elif index_name == "ocr_text":
+                ocr_results = self._search_ocr_text(query, threshold=0.5)
+                ocr_keyframes = [self.kf_lookup[kf_id] for kf_id in ocr_results if kf_id in self.kf_lookup]
+                session_state['buffers'][index_name] = ocr_keyframes[:buffer_size]
+                session_state['positions'][index_name] = len(ocr_keyframes)
             else:
                 index, id_map = index_data
                 annoy_ids = index.get_nns_by_vector(query_embedding, buffer_size)
@@ -174,7 +192,7 @@ class Searcher:
     def _refill_buffer(self, buffer_name: str, session_state: dict, query: str):
         current_pos = session_state['positions'][buffer_name]
         
-        if buffer_name == "transcript_text":
+        if buffer_name in ["transcript_text", "ocr_text"]:
             return
         
         query_embedding = self.encode_text(query)
@@ -187,6 +205,8 @@ class Searcher:
             index, id_map = self.color_index, self.color_id_map
         elif buffer_name == "objects":
             index, id_map = self.object_index, self.object_id_map
+        elif buffer_name == "ocr_embedding":
+            index, id_map = self.ocr_index, self.ocr_id_map
         else:
             return
         
@@ -215,6 +235,17 @@ class Searcher:
                 match_ratio = len(query_words.intersection(transcript_words)) / len(query_words)
                 confidence_boost = max(0.3, keyframe.transcript_confidence or 0.3)
                 base_score *= (0.3 - (0.2 * match_ratio * confidence_boost))
+        
+        if buffer_name == "ocr_text" and keyframe.ocr_text:
+            query_words = set(query.lower().split())
+            import re
+            clean_ocr = re.sub(r'[^\w\s]', ' ', keyframe.ocr_text.lower())
+            ocr_words = set(clean_ocr.split())
+            
+            if query_words.intersection(ocr_words):
+                match_ratio = len(query_words.intersection(ocr_words)) / len(query_words)
+                confidence_boost = max(0.3, keyframe.ocr_confidence or 0.3)
+                base_score *= (0.2 - (0.15 * match_ratio * confidence_boost))
         
         if filters:
             davinci_penalty = self._compute_davinci_filter_penalty(keyframe, filters)
@@ -306,6 +337,28 @@ class Searcher:
                 context_words = set(clean_context.split())
                 if query_words.intersection(context_words):
                     matching_ids.add(kf_id)
+        
+        return matching_ids
+
+    def _search_ocr_text(self, query: str, threshold: float = 0.5) -> set:
+        matching_ids = set()
+        query_words = set(query.lower().split())
+        
+        if not query_words:
+            return matching_ids
+            
+        for kf_id, kf in self.kf_lookup.items():
+            if not kf.ocr_text or not kf.ocr_text.strip():
+                continue
+                
+            if kf.ocr_confidence is not None and kf.ocr_confidence < threshold:
+                continue
+                
+            import re
+            clean_ocr = re.sub(r'[^\w\s]', ' ', kf.ocr_text.lower())
+            ocr_words = set(clean_ocr.split())
+            if query_words.intersection(ocr_words):
+                matching_ids.add(kf_id)
         
         return matching_ids
 

@@ -4,6 +4,7 @@ from VideoSearch.utils.audio import AudioTranscriber, TranscriptSegment
 from VideoSearch.utils.visual_feature_extractor import VisualFeatureExtractor
 from VideoSearch.utils.transcript_embeddings import get_transcript_embedder
 from VideoSearch.utils.objects import ObjectDetector
+from VideoSearch.utils.ocr_extractor import OCRExtractor
 import numpy as np
 from pathlib import Path
 
@@ -14,6 +15,7 @@ class ClipProcessor:
         self.visual_extractor = VisualFeatureExtractor(command=command)
         self.transcript_embedder = get_transcript_embedder()
         self.object_extractor = ObjectDetector(command=command)
+        self.ocr_extractor = OCRExtractor(command=command)
     
     def process_clip(self, clip: Clip) -> List[Keyframe]:
         if self.command:
@@ -124,6 +126,16 @@ class ClipProcessor:
             except Exception as e:
                 if self.command:
                     self.command.stdout.write(f"Object extraction failed for keyframe {keyframe.id}: {e}")
+            
+            try:
+                ocr_result = self.ocr_extractor.extract_with_embedding(image, confidence_threshold=0.5)
+                keyframe.ocr_text = ocr_result['text'] if ocr_result['text'] else None
+                keyframe.ocr_confidence = ocr_result['confidence'] if ocr_result['text'] else None
+                keyframe.ocr_bboxes = ocr_result['bboxes'] if ocr_result['bboxes'] else None
+                keyframe.ocr_embedding = Keyframe.compress_array(ocr_result['embedding']) if ocr_result['embedding'] is not None else None
+            except Exception as e:
+                if self.command:
+                    self.command.stdout.write(f"OCR extraction failed for keyframe {keyframe.id}: {e}")
             
             keyframe.save()
             keyframe.save_image()

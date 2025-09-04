@@ -58,6 +58,10 @@ class Command(BaseCommand):
             self.stdout.write(f"\n[FOLDER] Processing: {folder.name}")
             self.stdout.write(f"   Path: {folder.path}")
             
+            if not folder.path:
+                self.stdout.write(self.style_error(f"   ERROR: Path is empty for folder: {folder.name}"))
+                continue
+                
             folder_path = Path(folder.path)
             if not folder.path_exists():
                 self.stdout.write(self.style_error(f"   ERROR: Path no longer exists: {folder.path}"))
@@ -97,29 +101,29 @@ class Command(BaseCommand):
             self.stdout.write(f"   Imported: {total_imported}")
             self.stdout.write(f"   Skipped: {total_skipped}")
 
-        # Run processing pipeline if requested
         if process and not dry_run:
-            self.stdout.write(f"\n>> Running processing pipeline...")
+            self.stdout.write(f"\n>> Running per-video processing pipeline...")
             
-            # Check what needs processing
             from VideoSearch.models import Clip, Keyframe
-            videos_needing_processing = self.check_processing_status()
+            from multiprocessing import cpu_count
             
-            if videos_needing_processing['total'] > 0:
-                self.stdout.write(f"[PROCESSING STATUS]")
-                self.stdout.write(f"   Videos without web proxies: {videos_needing_processing['no_web_proxy']}")
-                self.stdout.write(f"   Videos without clips: {videos_needing_processing['no_clips']}")
-                self.stdout.write(f"   Videos without keyframes: {videos_needing_processing['no_keyframes']}")
-                self.stdout.write(f"   Videos without transcripts: {videos_needing_processing['no_transcripts']}")
-                self.stdout.write(f"   Videos without objects: {videos_needing_processing['no_objects']}")
+            all_videos = Video.objects.all()
+            if not all_videos.exists():
+                self.stdout.write("OK: No videos to process!")
+                return
+            
+            worker_keyframes = min(1, cpu_count())
+            processed_count = 0
+            
+            self.stdout.write(f"Processing {all_videos.count()} videos sequentially...")
+            
+            for video in all_videos:
+                video_name = Path(video.file_path).name
+                self.stdout.write(f"\n[VIDEO] {video_name} (ID: {video.id})")
                 
-                # Run processing steps directly (skip import_videos since we just imported)
-                from multiprocessing import cpu_count
-                worker_clip = min(1, cpu_count())
-                worker_keyframes = min(1, cpu_count())
-                
-                if videos_needing_processing['no_web_proxy'] > 0:
-                    self.stdout.write(">> Creating Web Proxies...")
+                needs_web_proxy = not video.web_path or not Path(video.web_path).exists()
+                if needs_web_proxy:
+                    self.stdout.write("   >> Creating web proxy...")
                     from VideoSearch.management.internal.create_web_videos import Command as CreateWebVideosCommand
                     cmd = CreateWebVideosCommand()
                     cmd.handle(
@@ -129,40 +133,43 @@ class Command(BaseCommand):
                         force=False,
                         replace_originals=False
                     )
-
-                if videos_needing_processing['no_clips'] > 0:
-                    self.stdout.write(">> Extracting Clips...")
+                else:
+                    self.stdout.write("   >> Web proxy already exists")
+                
+                has_clips = Clip.objects.filter(video=video).exists()
+                if not has_clips:
+                    self.stdout.write("   >> Extracting clips...")
                     from VideoSearch.management.internal.extract_clips import Command as ExtractClipsCommand
-                    cmd = ExtractClipsCommand()
-                    cmd.handle(workers=worker_clip)
-
-                if videos_needing_processing['no_keyframes'] > 0:
-                    self.stdout.write(">> Extracting Keyframes...")
-                    import torch
-                    from VideoSearch.management.internal.extract_keyframes import Command as ExtractKeyframesCommand
-                    cmd = ExtractKeyframesCommand()
-                    keyframe_kwargs = {
-                        "search_range_factor": 0.95 if torch.cuda.is_available() else 0.5,
-                        "frames_to_compare": 50 if torch.cuda.is_available() else 5,
-                        "workers": worker_keyframes
-                    }
-                    cmd.handle(**keyframe_kwargs)
-
-                if videos_needing_processing['no_transcripts'] > 0:
-                    self.stdout.write(">> Extracting Audio Transcripts...")
-                    from VideoSearch.management.internal.extract_audio_transcripts import Command as ExtractAudioTranscriptsCommand
-                    cmd = ExtractAudioTranscriptsCommand()
-                    cmd.handle(model_size="base", context_window=5.0, batch_videos=1)
-
-                if videos_needing_processing['no_objects'] > 0:
-                    self.stdout.write(">> Extracting Objects...")
-                    from VideoSearch.management.internal.extract_objects import Command as ExtractObjectsCommand
-                    cmd = ExtractObjectsCommand()
-                    cmd.handle(batch_size=4)
-
-                self.stdout.write("COMPLETE: Processing finished!")
-            else:
-                self.stdout.write("OK: All videos are already fully processed!")
+                    from VideoSearch.management.internal.extract_clips import process_video_for_clips
+                    try:
+                        result = process_video_for_clips(video.id, {}, None)
+                        self.stdout.write(f"   >> {result}")
+                    except Exception as e:
+                        self.stdout.write(f"   >> ERROR extracting clips: {e}")
+                        continue
+                else:
+                    self.stdout.write("   >> Clips already exist")
+                
+                clips = Clip.objects.filter(video=video)
+                if clips.exists():
+                    keyframes_exist = Keyframe.objects.filter(clip__video=video).exists()
+                    if not keyframes_exist:
+                        self.stdout.write("   >> Processing clips (keyframes + audio + OCR + objects)...")
+                        from django.core.management import call_command
+                        try:
+                            call_command("process_clips_v2", 
+                                       whisper_model="base", 
+                                       workers=worker_keyframes)
+                        except Exception as e:
+                            self.stdout.write(f"   >> ERROR processing clips: {e}")
+                            continue
+                    else:
+                        self.stdout.write("   >> Keyframes already processed")
+                
+                processed_count += 1
+                self.stdout.write(f"   >> COMPLETE: Video {processed_count}/{all_videos.count()}")
+            
+            self.stdout.write(f"\nCOMPLETE: Processed {processed_count} videos!")
 
         if dry_run:
             self.stdout.write(f"\nTIP: Run without --dry-run to actually import videos")
