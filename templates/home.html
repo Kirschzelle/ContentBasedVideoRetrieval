@@ -9,6 +9,7 @@
         </form>
 
         <h3>Color Filters</h3>
+        <button class="davinci-capture-btn" data-filter-type="color">Get Current Frame from DaVinci</button>
         <div id="color-filter-1" class="drag-drop-area">
             <p>Drag & Drop for: Color Filter 1</p>
             <img class="preview-image" src="" alt="Preview" style="display:none;">
@@ -23,6 +24,7 @@
         </div>
 
         <h3>Embedding Filters</h3>
+        <button class="davinci-capture-btn" data-filter-type="embedding">Get Current Frame from DaVinci</button>
         <div id="embedding-filter-1" class="drag-drop-area">
             <p>Drag & Drop for: Embedding Filter 1</p>
             <img class="preview-image" src="" alt="Preview" style="display:none;">
@@ -37,6 +39,7 @@
         </div>
 
         <h3>Object Filter</h3>
+        <button class="davinci-capture-btn" data-filter-type="object">Get Current Frame from DaVinci</button>
         <div id="object-filter" class="drag-drop-area">
             <p>Drag & Drop for: Object Filter</p>
             <img class="preview-image" src="" alt="Preview" style="display:none;">
@@ -57,4 +60,5 @@
 <script src="{% static 'js/progressive-search.js' %}?t={% now 'U' %}"></script>
 <script src="{% static 'js/drag-images.js' %}?t={% now 'U' %}"></script>
 <script src="{% static 'js/color-filter.js' %}?t={% now 'U' %}"></script>
+<script src="{% static 'js/davinci_frame_capture.js' %}?t={% now 'U' %}"></script>
 {% endblock %}

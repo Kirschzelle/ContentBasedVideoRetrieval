@@ -104,9 +104,58 @@ def send_clip(video_path, start_frame, end_frame, keyframe_frame, fps):
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
+def get_current_frame() -> dict:
+    try:
+        setup_davinci_env()
+        import DaVinciResolveScript as dvr
+        import tempfile
+        import requests
+        
+        resolve = dvr.scriptapp("Resolve")
+        if not resolve:
+            return {'success': False, 'error': 'Could not connect to DaVinci Resolve'}
+        
+        project_manager = resolve.GetProjectManager()
+        project = project_manager.GetCurrentProject()
+        
+        if not project:
+            return {'success': False, 'error': 'No project open in DaVinci Resolve'}
+        
+        timeline = project.GetCurrentTimeline()
+        if not timeline:
+            return {'success': False, 'error': 'No timeline available'}
+        
+        resolve.OpenPage("edit")
+        
+        current_tc = timeline.GetCurrentTimecode()
+        if not current_tc:
+            return {'success': False, 'error': 'No valid playhead position'}
+        
+        temp_file = os.path.join(tempfile.gettempdir(), f"davinci_frame_{current_tc.replace(':', '')}.jpg")
+        
+        export_result = project.ExportCurrentFrameAsStill(temp_file)
+        if not export_result:
+            return {'success': False, 'error': 'Failed to export current frame'}
+        
+        if not os.path.exists(temp_file):
+            return {'success': False, 'error': 'Frame file was not created'}
+        
+        file_size = os.path.getsize(temp_file)
+        
+        return {
+            'success': True,
+            'message': f'Frame captured at {current_tc}',
+            'timecode': current_tc,
+            'frame_path': temp_file,
+            'file_size': file_size
+        }
+        
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['status', 'send_clip'])
+    parser.add_argument('command', choices=['status', 'send_clip', 'get_current_frame'])
     parser.add_argument('--video-path')
     parser.add_argument('--start-frame', type=int)
     parser.add_argument('--end-frame', type=int)
@@ -123,6 +172,8 @@ def main():
             result = {'success': False, 'error': 'Missing required arguments for send_clip'}
         else:
             result = send_clip(args.video_path, args.start_frame, args.end_frame, args.keyframe_frame, args.fps)
+    elif args.command == 'get_current_frame':
+        result = get_current_frame()
     
     print(json.dumps(result))
 

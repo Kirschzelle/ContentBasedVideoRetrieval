@@ -171,6 +171,27 @@ def check_davinci_status(request):
     result = check_status()
     return JsonResponse(result)
 
+@csrf_exempt
+def get_current_frame_from_davinci(request):
+    """
+    Get the current frame from DaVinci Resolve's timeline viewer.
+    """
+    try:
+        from VideoSearch.utils.davinci_integration import get_current_frame_from_davinci as get_frame
+        result = get_frame()
+        
+        if result['success']:
+            logger.info(f"Successfully captured frame from DaVinci at timecode {result.get('timecode')}")
+        
+        return JsonResponse(result)
+        
+    except Exception as e:
+        logger.error(f"DaVinci frame capture view error: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Server error: {str(e)}'
+        })
+
 # External Frame Upload Views
 
 @csrf_exempt

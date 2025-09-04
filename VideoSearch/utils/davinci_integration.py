@@ -41,6 +41,40 @@ def check_davinci_status() -> dict:
             'error': f'Unexpected error: {str(e)}'
         }
 
+def get_current_frame_from_davinci() -> dict:
+    try:
+        script_path = get_subprocess_script_path()
+        result = subprocess.run(
+            f"{get_python312_path()} {script_path} get_current_frame",
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            response = json.loads(result.stdout)
+            if response.get('success'):
+                logger.info(f"Successfully retrieved current frame from DaVinci at {response.get('timecode')}")
+            return response
+        else:
+            return {
+                'success': False,
+                'error': f'Script failed: {result.stderr}'
+            }
+            
+    except subprocess.TimeoutExpired:
+        return {
+            'success': False,
+            'error': 'DaVinci operation timed out'
+        }
+    except Exception as e:
+        logger.error(f"DaVinci frame capture error: {str(e)}")
+        return {
+            'success': False,
+            'error': f'Unexpected error: {str(e)}'
+        }
+
 def send_clip_to_davinci_preview(keyframe) -> dict:
     try:
         video_path = keyframe.clip.video.file_path
