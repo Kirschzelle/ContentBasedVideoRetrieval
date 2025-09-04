@@ -111,6 +111,8 @@ class Searcher:
             
         if filters:
             for kf_id, categories in filters.items():
+                if str(kf_id).startswith('davinci_'):
+                    continue
                 for category in categories:
                     if category == "embeddings":
                         indices['dino'] = (self.dino_index, self.dino_id_map)
@@ -156,7 +158,7 @@ class Searcher:
                 self._refill_buffer(buffer_name, session_state, query)
                 continue
             
-            score = self._compute_simple_score(candidate, query, buffer_name)
+            score = self._compute_simple_score(candidate, query, buffer_name, filters)
             
             if score < best_score:
                 best_score = score
@@ -200,7 +202,7 @@ class Searcher:
         except (IndexError, KeyError):
             pass
     
-    def _compute_simple_score(self, keyframe: 'Keyframe', query: str, buffer_name: str) -> float:
+    def _compute_simple_score(self, keyframe: 'Keyframe', query: str, buffer_name: str, filters: dict = None) -> float:
         base_score = 0.5
         
         if buffer_name == "transcript_text" and keyframe.transcript_text:
@@ -214,7 +216,69 @@ class Searcher:
                 confidence_boost = max(0.3, keyframe.transcript_confidence or 0.3)
                 base_score *= (0.3 - (0.2 * match_ratio * confidence_boost))
         
+        if filters:
+            davinci_penalty = self._compute_davinci_filter_penalty(keyframe, filters)
+            base_score *= davinci_penalty
+        
         return base_score
+    
+    def _compute_davinci_filter_penalty(self, keyframe: 'Keyframe', filters: dict) -> float:
+        penalty = 1.0
+        
+        for kf_id, categories in filters.items():
+            if not str(kf_id).startswith('davinci_'):
+                continue
+                
+            davinci_features = self._get_davinci_features(str(kf_id))
+            if not davinci_features:
+                continue
+                
+            keyframe_features = keyframe.get_features_from_keyframe()
+            
+            for category in categories:
+                similarity = self._compute_davinci_similarity(davinci_features, keyframe_features, category)
+                penalty *= max(0.1, similarity)
+        
+        return penalty
+    
+    def _get_davinci_features(self, davinci_id: str) -> dict:
+        from django.core.cache import cache
+        return cache.get(f'davinci_features_{davinci_id}')
+    
+    def _compute_davinci_similarity(self, davinci_features: dict, keyframe_features: dict, category: str) -> float:
+        if category == "embeddings":
+            davinci_clip = davinci_features.get('clip_emb')
+            davinci_dino = davinci_features.get('dino_emb')
+            kf_clip = keyframe_features.get('clip_emb')
+            kf_dino = keyframe_features.get('dino_emb')
+            
+            similarities = []
+            if davinci_clip is not None and kf_clip is not None:
+                clip_sim = max(0.0, np.dot(davinci_clip, kf_clip) / (np.linalg.norm(davinci_clip) * np.linalg.norm(kf_clip)))
+                similarities.append(clip_sim)
+            if davinci_dino is not None and kf_dino is not None:
+                dino_sim = max(0.0, np.dot(davinci_dino, kf_dino) / (np.linalg.norm(davinci_dino) * np.linalg.norm(kf_dino)))
+                similarities.append(dino_sim)
+            
+            return max(similarities) if similarities else 0.0
+            
+        elif category == "colors":
+            davinci_hist = davinci_features.get('histogram')
+            kf_hist = keyframe_features.get('histogram')
+            
+            if davinci_hist is not None and kf_hist is not None:
+                return max(0.0, 1.0 - np.linalg.norm(davinci_hist - kf_hist))
+            return 0.0
+            
+        elif category == "objects":
+            davinci_obj = davinci_features.get('object_vector')
+            kf_obj = keyframe_features.get('object_vector')
+            
+            if davinci_obj is not None and kf_obj is not None:
+                return max(0.0, np.dot(davinci_obj, kf_obj) / (np.linalg.norm(davinci_obj) * np.linalg.norm(kf_obj)))
+            return 0.0
+            
+        return 0.0
 
     def _search_transcripts(self, query: str, threshold: float = 0.3) -> set:
         matching_ids = set()

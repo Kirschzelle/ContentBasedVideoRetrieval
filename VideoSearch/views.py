@@ -191,17 +191,52 @@ def check_davinci_status(request):
 
 @csrf_exempt
 def get_current_frame_from_davinci(request):
-    """
-    Get the current frame from DaVinci Resolve's timeline viewer.
-    """
     try:
         from VideoSearch.utils.davinci_integration import get_current_frame_from_davinci as get_frame
-        result = get_frame()
+        from VideoSearch.utils.davinci_integration import process_davinci_frame_for_filters
         
-        if result['success']:
-            logger.info(f"Successfully captured frame from DaVinci at timecode {result.get('timecode')}")
+        frame_result = get_frame()
         
-        return JsonResponse(result)
+        if not frame_result['success']:
+            return JsonResponse(frame_result)
+        
+        frame_path = frame_result.get('frame_path')
+        if not frame_path:
+            return JsonResponse({
+                'success': False,
+                'error': 'No frame path returned from DaVinci'
+            })
+        
+        processing_result = process_davinci_frame_for_filters(frame_path)
+        
+        if processing_result['success']:
+            from django.core.cache import cache
+            
+            cache.set(
+                f'davinci_features_davinci_{processing_result["frame_id"]}',
+                processing_result['features'],
+                timeout=3600
+            )
+            
+            request.session['davinci_frame'] = {
+                'frame_id': processing_result['frame_id'],
+                'features': processing_result['features'],
+                'image_info': processing_result['image_info'],
+                'temp_image_path': processing_result['image_path'],
+                'timecode': frame_result.get('timecode'),
+                'timestamp': frame_result.get('timestamp')
+            }
+            
+            logger.info(f"Successfully captured and processed frame from DaVinci at timecode {frame_result.get('timecode')}")
+            
+            return JsonResponse({
+                'success': True,
+                'message': f"Frame captured from DaVinci at {frame_result.get('timecode')}",
+                'frame_id': processing_result['frame_id'],
+                'image_url': f"/media/temp_frames/{processing_result['frame_id']}.jpg"
+            })
+        else:
+            return JsonResponse(processing_result)
         
     except Exception as e:
         logger.error(f"DaVinci frame capture view error: {str(e)}")

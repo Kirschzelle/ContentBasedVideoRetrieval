@@ -120,3 +120,52 @@ def send_clip_to_davinci_preview(keyframe) -> dict:
             'success': False,
             'error': f'Unexpected error: {str(e)}'
         }
+
+def process_davinci_frame_for_filters(frame_path: str) -> dict:
+    try:
+        from PIL import Image
+        from VideoSearch.utils.visual_feature_extractor import VisualFeatureExtractor  
+        from VideoSearch.utils.objects import ObjectDetector
+        import uuid
+        from django.conf import settings
+        from pathlib import Path
+        
+        image = Image.open(frame_path)
+        
+        visual_extractor = VisualFeatureExtractor()
+        object_extractor = ObjectDetector()
+        
+        features = visual_extractor.extract_features(image)
+        object_vector = object_extractor.extract_vector(image)
+        
+        frame_id = str(uuid.uuid4())
+        temp_dir = Path(settings.MEDIA_ROOT) / 'temp_frames'
+        temp_dir.mkdir(exist_ok=True)
+        
+        temp_image_path = temp_dir / f"{frame_id}.jpg"
+        image.save(temp_image_path, 'JPEG', quality=85)
+        
+        return {
+            'success': True,
+            'frame_id': frame_id,
+            'image_path': str(temp_image_path),
+            'features': {
+                'clip_emb': features['clip_emb'],
+                'dino_emb': features.get('dino_emb'),
+                'histogram': features.get('histogram'),
+                'palette': features.get('palette'),
+                'colorfulness': features.get('colorfulness'),
+                'object_vector': object_vector
+            },
+            'image_info': {
+                'width': image.width,
+                'height': image.height
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"DaVinci frame processing error: {str(e)}")
+        return {
+            'success': False,
+            'error': f'Feature extraction failed: {str(e)}'
+        }
