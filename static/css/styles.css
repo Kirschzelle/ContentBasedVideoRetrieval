@@ -52,6 +52,35 @@ form input[type="text"] {
     margin-top: 25px;
 }
 
+.search-mode-controls {
+    display: flex;
+    gap: 5px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.search-mode-btn {
+    padding: 8px 16px;
+    border: 2px solid #666;
+    background: transparent;
+    color: #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.search-mode-btn:hover {
+    border-color: #888;
+    color: white;
+}
+
+.search-mode-btn.active {
+    background: #007acc;
+    border-color: #007acc;
+    color: white;
+}
+
 .drag-drop-area {
     margin-top: 20px;
     padding: 10px;

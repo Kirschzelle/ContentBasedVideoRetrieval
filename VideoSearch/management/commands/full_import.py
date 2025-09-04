@@ -6,14 +6,16 @@ class Command(BaseCommand):
     help = "Run full import pipeline with default parameters."
 
     def add_arguments(self, parser):
-        parser.add_argument('--workers_clip', type=int, default=None, help="Number of multiprocessing workers to use for clip/keyframe extraction.")
-        parser.add_argument('--workers_keyframes', type=int, default=None, help="Number of multiprocessing workers to use for clip/keyframe extraction.")
+        parser.add_argument('--workers_clip', type=int, default=None, help="Number of multiprocessing workers to use for clip extraction.")
+        parser.add_argument('--workers_keyframes', type=int, default=None, help="Number of multiprocessing workers to use for keyframe processing.")
+        parser.add_argument('--whisper_model', type=str, default='base', choices=['tiny', 'base', 'small', 'medium', 'large'], help="Whisper model size for audio transcription.")
 
     def handle(self, *args, **kwargs):
         from multiprocessing import cpu_count
 
         worker_clip = kwargs.get("workers_clip")
         worker_keyframes = kwargs.get("workers_keyframes")
+        whisper_model = kwargs.get("whisper_model", "base")
         worker_clip = worker_clip if worker_clip is not None else min(1, cpu_count())
         worker_keyframes = worker_keyframes if worker_keyframes is not None else min(1, cpu_count())
 
@@ -26,15 +28,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style_info("=== Extracting Clips ==="))
         call_command("extract_clips", workers=worker_clip)
 
-        self.stdout.write(self.style_info("=== Extracting Keyframes ==="))
-        keyframe_kwargs = {
-            "search_range_factor": 0.95 if torch.cuda.is_available() else 0.5,
-            "frames_to_compare": 50 if torch.cuda.is_available() else 5,
+        self.stdout.write(self.style_info("=== Processing Clips (Audio + Visual Features) ==="))
+        process_kwargs = {
+            "whisper_model": whisper_model,
             "workers": worker_keyframes
         }
-        call_command("extract_keyframes", **keyframe_kwargs)
-
-        self.stdout.write(self.style_info("=== Extracting Objects ==="))
-        call_command("extract_objects", batch_size = 4)
+        call_command("process_clips_v2", **process_kwargs)
 
         self.stdout.write(self.style_success("Full import completed."))

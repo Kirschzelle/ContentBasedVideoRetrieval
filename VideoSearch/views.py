@@ -31,22 +31,20 @@ def home_view(request):
 
 def api_search_view(request):
     query = request.GET.get("q")
-    returned = request.GET.getlist("returned[]")
-    returned_ids = set(map(int, returned)) if returned else set()
-
+    search_mode = request.GET.get("mode", "balanced")
+    
     if not query:
         return JsonResponse({"error": "No query provided."}, status=400)
 
-    # Check for special uploaded frames query
     if query == "uploaded_frame:latest":
         from VideoSearch.models import UploadedFrame
-        uploaded_frames = UploadedFrame.objects.all()[:20]  # Show last 20 uploaded frames
+        uploaded_frames = UploadedFrame.objects.all()[:20]
         
         keyframe_data = []
         for frame in uploaded_frames:
             keyframe_data.append({
                 "keyframe_id": f"uploaded_{frame.id}",
-                "thumbnail": f"/media/uploaded_frames/{frame.filename}",  # Fake URL for display
+                "thumbnail": f"/media/uploaded_frames/{frame.filename}",
                 "is_uploaded_frame": True,
                 "upload_timestamp": frame.upload_timestamp.isoformat()
             })
@@ -64,20 +62,37 @@ def api_search_view(request):
         except ValueError:
             continue
 
-    results = get_searcher().search_incremental(query, returned_ids=returned_ids, filters=filters, top_k=1000)
-    if not results:
+    session_state = request.session.get('search_state')
+    if session_state and 'returned_ids' in session_state:
+        session_state['returned_ids'] = set(session_state['returned_ids'])
+    if request.GET.get('reset') == '1':
+        session_state = None
+    
+    search_result = get_searcher().search_streaming(
+        query=query, 
+        search_mode=search_mode,
+        session_state=session_state, 
+        filters=filters,
+        batch_size=10
+    )
+    
+    serializable_state = search_result['session_state'].copy()
+    serializable_state['returned_ids'] = list(serializable_state['returned_ids'])
+    request.session['search_state'] = serializable_state
+    
+    if not search_result['results']:
         return JsonResponse({"done": True})
 
     media_root = Path(settings.MEDIA_ROOT).resolve()
     keyframe_data = []
 
-    for kf in results:
+    for kf in search_result['results']:
         image_path = kf.get_image_path().resolve()
 
         try:
             relative_path = image_path.relative_to(media_root)
         except ValueError:
-            continue  # skip invalid
+            continue
 
         image_url = settings.MEDIA_URL.rstrip("/") + "/" + str(relative_path).replace("\\", "/")
 
@@ -86,7 +101,10 @@ def api_search_view(request):
             "thumbnail": image_url
         })
 
-    return JsonResponse({"results": keyframe_data})
+    return JsonResponse({
+        "results": keyframe_data, 
+        "done": search_result['done']
+    })
 
 def detailed_view(request, keyframe_id):
     query = request.GET.get('q', '')
