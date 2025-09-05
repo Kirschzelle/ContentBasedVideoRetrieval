@@ -41,16 +41,22 @@ document.addEventListener("DOMContentLoaded", function () {
         
         [...returnedKeyframes].forEach(id => params.append("returned[]", id));
 
-        const filtersRaw = new URLSearchParams(window.location.search).get("filters");
-        if (filtersRaw) {
-            filtersRaw.split(",").forEach(pair => params.append("filters[]", pair));
-        }
+        const urlParams = new URLSearchParams(window.location.search);
+        const filterKeys = Array.from(urlParams.entries())
+            .filter(([key, _]) => key.startsWith("filters["))
+            .map(([key]) => {
+                const match = key.match(/^filters\[(.+)\]$/);
+                return match ? match[1] : null;
+            })
+            .filter(Boolean);
+        
+        filterKeys.forEach(f => params.append("filters[]", f));
 
         try {
             const response = await fetch(`/api/search/?${params.toString()}`);
             const data = await response.json();
 
-            if (data.done || !data.results || data.results.length === 0) {
+            if (!data.results || data.results.length === 0) {
                 if (!resultsFound) {
                     resultContainer.innerHTML = `<p>No clips found matching "${query}" in ${currentSearchMode} mode.</p>`;
                 }
@@ -75,12 +81,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
             fetchInProgress = false;
             
-            if (!data.done && !stop) {
-                setTimeout(() => {
-                    if (!stop && !fetchInProgress) {
-                        fetchNextResult();
-                    }
-                }, 200);
+            if (data.done) {
+                stop = true;
             }
 
         } catch (err) {
@@ -90,22 +92,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function handleScroll() {
-        if (stop || fetchInProgress) return;
-        
-        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        const windowHeight = window.innerHeight;
-        const documentHeight = document.documentElement.scrollHeight;
-        
-        if (scrollTop + windowHeight >= documentHeight - 500) {
-            fetchNextResult();
-        }
-    }
-
     if (query) {
         loadMoreBtn.style.display = "none";
         fetchNextResult();
-        
-        window.addEventListener('scroll', handleScroll, { passive: true });
     }
 });

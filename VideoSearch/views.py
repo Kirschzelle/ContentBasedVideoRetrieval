@@ -76,7 +76,7 @@ def api_search_view(request):
         query=query,
         returned_ids=returned_ids,
         filters=filters,
-        top_k=50
+        search_mode=search_mode
     )
     
     if not results:
@@ -102,7 +102,7 @@ def api_search_view(request):
 
     return JsonResponse({
         "results": keyframe_data, 
-        "done": len(results) < 50  # If we got fewer than requested, we're done
+        "done": True  # Always done since we return all results at once
     })
 
 def detailed_view(request, keyframe_id):

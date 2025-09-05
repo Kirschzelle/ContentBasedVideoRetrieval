@@ -8,7 +8,6 @@ from VideoSearch.models import Keyframe
 from VideoSearch.utils.hardware import EmbeddingModelSelector
 from VideoSearch.utils.visual_feature_extractor import compute_distance, nonlinear_pooling
 import utils.filters as ufil
-from utils.annoy_index import build_annoy_index
 
 logger = logging.getLogger(__name__)
 
@@ -51,32 +50,8 @@ class Searcher:
                   "ocr_text", "ocr_confidence", "ocr_bboxes", "ocr_embedding")
         }
 
-        self.clip_index, self.id_map = build_annoy_index(
-            feature_name="clip_emb",
-            kf_lookup=self.kf_lookup
-        )
 
-        self.dino_index, self.dino_id_map = build_annoy_index(
-            feature_name="dino_emb",
-            kf_lookup=self.kf_lookup
-        )
-
-        self.color_index, self.color_id_map = build_annoy_index(
-            feature_name="histogram",
-            kf_lookup=self.kf_lookup
-        )
-
-        self.object_index, self.object_id_map = build_annoy_index(
-            feature_name="object_vector",
-            kf_lookup=self.kf_lookup
-        )
-
-        self.ocr_index, self.ocr_id_map = build_annoy_index(
-            feature_name="ocr_embedding",
-            kf_lookup=self.kf_lookup
-        )
-
-    def search_incremental(self, query: str, returned_ids=None, filters=None, top_k=50):
+    def search_incremental(self, query: str, returned_ids=None, filters=None, search_mode="balanced", top_k=None):
         if returned_ids is None:
             returned_ids = set()
         if filters is None:
@@ -84,53 +59,22 @@ class Searcher:
 
         query_embedding = self.encode_text(query)
 
-        # Get candidates from CLIP index
-        clip_ids = self.clip_index.get_nns_by_vector(query_embedding, len(self.kf_lookup))
-        filter_ids = set()
+        all_candidate_ids = set(self.kf_lookup.keys()) - returned_ids
 
-        # Add filter matches
-        for kf_id, categories in filters.items():
-            filter_kf = self.kf_lookup.get(kf_id)
-            if not filter_kf:
-                continue
-            filter_feats = filter_kf.get_features_from_keyframe()
-
-            for category in categories:
-                if category == "embeddings":
-                    emb = filter_feats.get("dino_emb")
-                    if emb is not None:
-                        dino_ids = self.dino_index.get_nns_by_vector(emb, 1000)
-                        filter_ids.update(self.dino_id_map[i] for i in dino_ids if i in self.dino_id_map)
-                elif category == "colors":
-                    hist = filter_feats.get("histogram")
-                    if hist is not None:
-                        color_ids = self.color_index.get_nns_by_vector(hist, 1000)
-                        filter_ids.update(self.color_id_map[i] for i in color_ids if i in self.color_id_map)
-                elif category == "objects":
-                    obj_vec = filter_feats.get("object_vector")
-                    if obj_vec is not None:
-                        obj_ids = self.object_index.get_nns_by_vector(obj_vec, 1000)
-                        filter_ids.update(self.object_id_map[i] for i in obj_ids if i in self.object_id_map)
-
-        # Combine all candidate IDs and exclude already returned ones
-        all_candidate_ids = set(self.id_map[i] for i in clip_ids if i in self.id_map) | filter_ids
-        all_candidate_ids.difference_update(returned_ids)
-
-        # Score and sort candidates
         scored = []
         for kf_id in all_candidate_ids:
             kf = self.kf_lookup.get(kf_id)
             if not kf:
                 continue
-            score = self.compute_total_similarity(query_embedding, kf, filters)
+            score = self.compute_total_similarity(query_embedding, kf, filters, search_mode, query)
             if score is not None:
                 scored.append((score, kf))
 
         scored.sort(key=lambda x: x[0])
         pruned = prune_similar_results([s[1] for s in scored])
-        return pruned[:top_k]
+        return pruned[:top_k] if top_k else pruned
 
-    def compute_total_similarity(self, query_embedding, candidate_kf, filters):
+    def compute_total_similarity(self, query_embedding, candidate_kf, filters, search_mode="balanced", query_text=None):
         candidate_features = candidate_kf.get_features_from_keyframe()
 
         clip_score = self._compute_clip_similarity(query_embedding, candidate_features)
@@ -138,14 +82,51 @@ class Searcher:
             return None
 
         object_score = self._compute_object_similarity(candidate_features)
+        ocr_score = self._compute_ocr_similarity(query_embedding, candidate_features, query_text)
+        transcript_score = self._compute_transcript_similarity(query_embedding, candidate_features, query_text)
         
         filter_scores = self._compute_filter_distances(candidate_features, filters)
 
-        distances = [clip_score] + filter_scores
-        if object_score is not None:
-            distances.insert(1, object_score)
+        distances = []
+        weights = []
         
-        return nonlinear_pooling(distances, 1)
+        if search_mode == "visual":
+            distances.append(clip_score)
+            weights.append(2.0)
+            if object_score is not None:
+                distances.append(object_score)
+                weights.append(0.2)
+            if ocr_score is not None:
+                distances.append(ocr_score)
+                weights.append(1.0)
+        elif search_mode == "audio":
+            distances.append(clip_score)
+            weights.append(0.5)
+            if ocr_score is not None:
+                distances.append(ocr_score)
+                weights.append(0.1)
+            if transcript_score is not None:
+                distances.append(transcript_score)
+                weights.append(5.0)
+        else:
+            distances.append(clip_score)
+            weights.append(1.0)
+            if object_score is not None:
+                distances.append(object_score)
+                weights.append(0.1)
+            if ocr_score is not None:
+                distances.append(ocr_score)
+                weights.append(1.0)
+            if transcript_score is not None:
+                distances.append(transcript_score)
+                weights.append(1.0)
+        
+        for score in filter_scores:
+            distances.append(score)
+            weights.append(2.0)
+        
+        weighted_distances = [d * w for d, w in zip(distances, weights)]
+        return nonlinear_pooling(weighted_distances, 1)
 
     def _compute_clip_similarity(self, query_embedding, candidate_features):
         emb = candidate_features.get("clip_emb")
@@ -165,6 +146,100 @@ class Searcher:
         avg_conf = np.mean(list(confs.values())) if confs else 0.0
         weight = 0.2 + 0.8 * avg_conf
         return object_distance
+
+    def _compute_ocr_similarity(self, query_embedding, candidate_features, query_text=None):
+        ocr_text = candidate_features.get("ocr_text")
+        ocr_emb = candidate_features.get("ocr_embedding")
+        ocr_confidence = candidate_features.get("ocr_confidence", 0.0)
+        
+        if not ocr_text and ocr_emb is None:
+            return None
+        
+        scores = []
+        weights = []
+        
+        if ocr_text and query_text:
+            query_lower = query_text.lower()
+            ocr_lower = ocr_text.lower()
+            
+            if query_lower in ocr_lower:
+                exact_match_score = 0.0
+            else:
+                query_words = set(query_lower.split())
+                ocr_words = set(ocr_lower.split())
+                if query_words & ocr_words:
+                    word_overlap = len(query_words & ocr_words) / len(query_words)
+                    exact_match_score = 1.0 - word_overlap
+                else:
+                    exact_match_score = 1.0
+            
+            scores.append(exact_match_score)
+            weights.append(ocr_confidence * 2.0)
+        
+        if ocr_emb is not None:
+            norm = np.linalg.norm(ocr_emb)
+            if norm > 0:
+                ocr_emb = ocr_emb / norm
+                if ocr_emb.shape == query_embedding.shape:
+                    embedding_score = 1 - np.dot(query_embedding, ocr_emb)
+                    scores.append(embedding_score)
+                    weights.append(1.0)
+        
+        if not scores:
+            return None
+        
+        if len(scores) == 1:
+            return scores[0]
+        
+        weighted_avg = sum(s * w for s, w in zip(scores, weights)) / sum(weights)
+        return weighted_avg
+
+    def _compute_transcript_similarity(self, query_embedding, candidate_features, query_text=None):
+        transcript_text = candidate_features.get("transcript_text")
+        transcript_emb = candidate_features.get("transcript_embedding")
+        transcript_confidence = candidate_features.get("transcript_confidence", 0.0)
+        
+        if not transcript_text and transcript_emb is None:
+            return None
+        
+        scores = []
+        weights = []
+        
+        if transcript_text and query_text:
+            query_lower = query_text.lower()
+            transcript_lower = transcript_text.lower()
+            
+            if query_lower in transcript_lower:
+                exact_match_score = 0.0
+            else:
+                query_words = set(query_lower.split())
+                transcript_words = set(transcript_lower.split())
+                if query_words & transcript_words:
+                    word_overlap = len(query_words & transcript_words) / len(query_words)
+                    exact_match_score = 1.0 - word_overlap
+                else:
+                    exact_match_score = 1.0
+            
+            scores.append(exact_match_score)
+            weights.append(transcript_confidence * 2.0)
+        
+        if transcript_emb is not None:
+            norm = np.linalg.norm(transcript_emb)
+            if norm > 0:
+                transcript_emb = transcript_emb / norm
+                if transcript_emb.shape == query_embedding.shape:
+                    embedding_score = 1 - np.dot(query_embedding, transcript_emb)
+                    scores.append(embedding_score)
+                    weights.append(1.0)
+        
+        if not scores:
+            return None
+        
+        if len(scores) == 1:
+            return scores[0]
+        
+        weighted_avg = sum(s * w for s, w in zip(scores, weights)) / sum(weights)
+        return weighted_avg
 
     def _compute_filter_distances(self, candidate_features, filters):
         distances = []
@@ -204,9 +279,18 @@ class Searcher:
             
         except RuntimeError as e:
             if "CUDA" in str(e):
-                logger.warning(f"CUDA error in encode_text, falling back to CPU: {e}")
+                logger.warning(f"CUDA error in encode_text, reinitializing model on CPU: {e}")
+                # Reinitialize model on CPU instead of moving existing model
+                from VideoSearch.utils.hardware import EmbeddingModelSelector
+                hardware = EmbeddingModelSelector()
+                clip_model_name, _, _ = hardware.select()
+                
+                try:
+                    self.model = CLIPModel.from_pretrained(clip_model_name, local_files_only=True)
+                except (OSError, ValueError):
+                    self.model = CLIPModel.from_pretrained(clip_model_name)
+                
                 self.device = "cpu"
-                self.model = self.model.cpu()
                 inputs = self.tokenizer([text], return_tensors="pt")
                 with torch.no_grad():
                     features = self.model.get_text_features(**inputs)

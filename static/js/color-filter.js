@@ -55,6 +55,7 @@ document.addEventListener("DOMContentLoaded", function () {
             requestParams.append("returned[]", id)
         );
 
+
         filterKeys.forEach(f =>
             requestParams.append("filters[]", f)
         );
@@ -63,7 +64,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const response = await fetch(`/api/search/?${requestParams.toString()}`);
             const data = await response.json();
 
-            if (data.done || !data.results || data.results.length === 0) {
+            if (!data.results || data.results.length === 0) {
                 if (!resultsFound) {
                     resultContainer.innerHTML = `<p>No clips found matching "${query}" with the selected filters.</p>`;
                 }
@@ -87,6 +88,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 `;
                 resultContainer.appendChild(div);
             });
+
+            fetchInProgress = false;
+            
+            if (data.done) {
+                stop = true;
+            }
 
         } catch (err) {
             console.error("Error fetching result:", err);
