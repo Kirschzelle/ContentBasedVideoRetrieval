@@ -62,34 +62,30 @@ def api_search_view(request):
         except ValueError:
             continue
 
-    session_state = request.session.get('search_state')
-    if session_state and 'returned_ids' in session_state:
-        session_state['returned_ids'] = set(session_state['returned_ids'])
-    if request.GET.get('reset') == '1':
-        session_state = None
+    # Get returned IDs from request parameters instead of session
+    returned_ids = set()
+    returned_raw = request.GET.getlist("returned[]")
+    for returned_id in returned_raw:
+        try:
+            returned_ids.add(int(returned_id))
+        except ValueError:
+            continue
     
-    search_result = get_searcher().search_streaming(
-        query=query, 
-        search_mode=search_mode,
-        session_state=session_state, 
+    # Use the simpler search_incremental method
+    results = get_searcher().search_incremental(
+        query=query,
+        returned_ids=returned_ids,
         filters=filters,
-        batch_size=20
+        top_k=50
     )
     
-    serializable_state = {
-        'returned_ids': list(search_result['session_state']['returned_ids']),
-        'positions': search_result['session_state']['positions'].copy(),
-        'last_query': search_result['session_state']['last_query']
-    }
-    request.session['search_state'] = serializable_state
-    
-    if not search_result['results']:
+    if not results:
         return JsonResponse({"results": [], "done": True})
 
     media_root = Path(settings.MEDIA_ROOT).resolve()
     keyframe_data = []
 
-    for kf in search_result['results']:
+    for kf in results:
         image_path = kf.get_image_path().resolve()
 
         try:
@@ -106,7 +102,7 @@ def api_search_view(request):
 
     return JsonResponse({
         "results": keyframe_data, 
-        "done": search_result['done']
+        "done": len(results) < 50  # If we got fewer than requested, we're done
     })
 
 def detailed_view(request, keyframe_id):

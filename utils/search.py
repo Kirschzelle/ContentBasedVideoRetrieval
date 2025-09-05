@@ -76,6 +76,115 @@ class Searcher:
             kf_lookup=self.kf_lookup
         )
 
+    def search_incremental(self, query: str, returned_ids=None, filters=None, top_k=50):
+        if returned_ids is None:
+            returned_ids = set()
+        if filters is None:
+            filters = {}
+
+        query_embedding = self.encode_text(query)
+
+        # Get candidates from CLIP index
+        clip_ids = self.clip_index.get_nns_by_vector(query_embedding, len(self.kf_lookup))
+        filter_ids = set()
+
+        # Add filter matches
+        for kf_id, categories in filters.items():
+            filter_kf = self.kf_lookup.get(kf_id)
+            if not filter_kf:
+                continue
+            filter_feats = filter_kf.get_features_from_keyframe()
+
+            for category in categories:
+                if category == "embeddings":
+                    emb = filter_feats.get("dino_emb")
+                    if emb is not None:
+                        dino_ids = self.dino_index.get_nns_by_vector(emb, 1000)
+                        filter_ids.update(self.dino_id_map[i] for i in dino_ids if i in self.dino_id_map)
+                elif category == "colors":
+                    hist = filter_feats.get("histogram")
+                    if hist is not None:
+                        color_ids = self.color_index.get_nns_by_vector(hist, 1000)
+                        filter_ids.update(self.color_id_map[i] for i in color_ids if i in self.color_id_map)
+                elif category == "objects":
+                    obj_vec = filter_feats.get("object_vector")
+                    if obj_vec is not None:
+                        obj_ids = self.object_index.get_nns_by_vector(obj_vec, 1000)
+                        filter_ids.update(self.object_id_map[i] for i in obj_ids if i in self.object_id_map)
+
+        # Combine all candidate IDs and exclude already returned ones
+        all_candidate_ids = set(self.id_map[i] for i in clip_ids if i in self.id_map) | filter_ids
+        all_candidate_ids.difference_update(returned_ids)
+
+        # Score and sort candidates
+        scored = []
+        for kf_id in all_candidate_ids:
+            kf = self.kf_lookup.get(kf_id)
+            if not kf:
+                continue
+            score = self.compute_total_similarity(query_embedding, kf, filters)
+            if score is not None:
+                scored.append((score, kf))
+
+        scored.sort(key=lambda x: x[0])
+        pruned = prune_similar_results([s[1] for s in scored])
+        return pruned[:top_k]
+
+    def compute_total_similarity(self, query_embedding, candidate_kf, filters):
+        candidate_features = candidate_kf.get_features_from_keyframe()
+
+        clip_score = self._compute_clip_similarity(query_embedding, candidate_features)
+        if clip_score is None:
+            return None
+
+        object_score = self._compute_object_similarity(candidate_features)
+        
+        filter_scores = self._compute_filter_distances(candidate_features, filters)
+
+        distances = [clip_score] + filter_scores
+        if object_score is not None:
+            distances.insert(1, object_score)
+        
+        return nonlinear_pooling(distances, 1)
+
+    def _compute_clip_similarity(self, query_embedding, candidate_features):
+        emb = candidate_features.get("clip_emb")
+        if emb is None:
+            return None
+        norm = np.linalg.norm(emb)
+        if norm == 0:
+            return None
+        emb = emb / norm
+        return 1 - np.dot(query_embedding, emb)
+
+    def _compute_object_similarity(self, candidate_features):
+        if self.last_query_objects is None:
+            return None
+        object_distance = ufil.filter_objects(candidate_features, self.last_query_objects)
+        confs = self.last_query_objects.get("objects", {})
+        avg_conf = np.mean(list(confs.values())) if confs else 0.0
+        weight = 0.2 + 0.8 * avg_conf
+        return object_distance
+
+    def _compute_filter_distances(self, candidate_features, filters):
+        distances = []
+        for kf_id, categories in filters.items():
+            filter_keyframe = self.kf_lookup.get(kf_id)
+            if not filter_keyframe:
+                continue
+            filter_features = filter_keyframe.get_features_from_keyframe()
+            for category in categories:
+                if category == "embeddings":
+                    result = ufil.filter_embedding(candidate_features, filter_features)
+                elif category == "colors":
+                    result = ufil.filter_colors(candidate_features, filter_features)
+                elif category == "objects":
+                    result = ufil.filter_objects(candidate_features, filter_features)
+                else:
+                    continue
+                distances.append(result)
+        return distances
+
     def search_streaming(self, query: str, search_mode: str = "balanced", 
                         session_state=None, filters=None, batch_size=10):
         if filters is None:
@@ -136,7 +245,7 @@ class Searcher:
         return indices
     
     def _initialize_search_buffers(self, query: str, active_indices: dict, session_state: dict) -> dict:
-        buffer_size = 5000
+        buffer_size = 2000
         query_embedding = self.encode_text(query)
         
         if 'buffers' not in session_state:
@@ -217,14 +326,19 @@ class Searcher:
             return
         
         try:
-            next_batch_size = min(50, max(1, len(self.kf_lookup) - current_pos))
-            if next_batch_size > 0:
-                annoy_ids = index.get_nns_by_vector(query_embedding, current_pos + next_batch_size)
-                if len(annoy_ids) > current_pos:
-                    new_id = annoy_ids[current_pos]
-                    if id_map[new_id] in self.kf_lookup:
-                        session_state['buffers'][buffer_name].append(self.kf_lookup[id_map[new_id]])
-                        session_state['positions'][buffer_name] += 1
+            refill_batch = min(50, max(10, len(self.kf_lookup) - current_pos))
+            if refill_batch > 0:
+                annoy_ids = index.get_nns_by_vector(query_embedding, current_pos + refill_batch)
+                new_items_added = 0
+                
+                for i in range(current_pos, min(len(annoy_ids), current_pos + refill_batch)):
+                    if i < len(annoy_ids):
+                        new_id = annoy_ids[i]
+                        if new_id in id_map and id_map[new_id] in self.kf_lookup:
+                            session_state['buffers'][buffer_name].append(self.kf_lookup[id_map[new_id]])
+                            new_items_added += 1
+                
+                session_state['positions'][buffer_name] += new_items_added
         except (IndexError, KeyError):
             pass
     

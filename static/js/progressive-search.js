@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const query = new URLSearchParams(window.location.search).get("q");
     const resultContainer = document.getElementById("progressive-results");
     const loadMoreBtn = document.getElementById("load-more");
+    const returnedKeyframes = new Set();
     let resultsFound = false;
     let stop = false;
     let fetchInProgress = false;
@@ -20,6 +21,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function resetSearch() {
         resultContainer.innerHTML = "";
+        returnedKeyframes.clear();
         resultsFound = false;
         stop = false;
         fetchInProgress = false;
@@ -36,6 +38,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const params = new URLSearchParams();
         params.append("q", query);
         params.append("mode", currentSearchMode);
+        
+        [...returnedKeyframes].forEach(id => params.append("returned[]", id));
 
         const filtersRaw = new URLSearchParams(window.location.search).get("filters");
         if (filtersRaw) {
@@ -46,7 +50,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const response = await fetch(`/api/search/?${params.toString()}`);
             const data = await response.json();
 
-            if (!data.results || data.results.length === 0) {
+            if (data.done || !data.results || data.results.length === 0) {
                 if (!resultsFound) {
                     resultContainer.innerHTML = `<p>No clips found matching "${query}" in ${currentSearchMode} mode.</p>`;
                 }
@@ -54,13 +58,11 @@ document.addEventListener("DOMContentLoaded", function () {
                 fetchInProgress = false;
                 return;
             }
-            
-            if (data.done) {
-                stop = true;
-            }
 
             resultsFound = true;
             data.results.forEach(result => {
+                returnedKeyframes.add(result.keyframe_id);
+
                 const div = document.createElement("div");
                 div.className = "clip-card preview-container-home";
                 div.innerHTML = `
@@ -71,11 +73,15 @@ document.addEventListener("DOMContentLoaded", function () {
                 resultContainer.appendChild(div);
             });
 
-            if (data.done) {
-                stop = true;
-            }
-
             fetchInProgress = false;
+            
+            if (!data.done && !stop) {
+                setTimeout(() => {
+                    if (!stop && !fetchInProgress) {
+                        fetchNextResult();
+                    }
+                }, 200);
+            }
 
         } catch (err) {
             console.error("Error fetching result:", err);
@@ -84,8 +90,22 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function handleScroll() {
+        if (stop || fetchInProgress) return;
+        
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const windowHeight = window.innerHeight;
+        const documentHeight = document.documentElement.scrollHeight;
+        
+        if (scrollTop + windowHeight >= documentHeight - 500) {
+            fetchNextResult();
+        }
+    }
+
     if (query) {
         loadMoreBtn.style.display = "none";
         fetchNextResult();
+        
+        window.addEventListener('scroll', handleScroll, { passive: true });
     }
 });
