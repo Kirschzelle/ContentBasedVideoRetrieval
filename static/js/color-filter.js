@@ -35,15 +35,31 @@ document.addEventListener("DOMContentLoaded", function () {
     let resultsFound = false;
     let stop = false;
     let fetchInProgress = false;
-    let currentSearchMode = "balanced";
+    const urlParams = new URLSearchParams(window.location.search);
+    let currentSearchMode = urlParams.get("mode") || "balanced";
 
     const searchModeButtons = document.querySelectorAll(".search-mode-btn");
+    
+    // Set active button based on current mode
+    searchModeButtons.forEach(btn => {
+        if (btn.dataset.mode === currentSearchMode) {
+            btn.classList.add("active");
+        } else {
+            btn.classList.remove("active");
+        }
+    });
     
     searchModeButtons.forEach(btn => {
         btn.addEventListener("click", function() {
             searchModeButtons.forEach(b => b.classList.remove("active"));
             this.classList.add("active");
             currentSearchMode = this.dataset.mode;
+            
+            const params = new URLSearchParams(window.location.search);
+            params.set("mode", currentSearchMode);
+            const newUrl = `${window.location.pathname}?${params.toString()}`;
+            window.history.pushState({}, "", newUrl);
+            
             resetSearch();
         });
     });
@@ -134,20 +150,3 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 });
 
-document.addEventListener("DOMContentLoaded", () => {
-    const form = document.getElementById("search-form");
-
-    form.addEventListener("submit", (e) => {
-        e.preventDefault();
-
-        const query = form.q.value.trim();
-        const params = new URLSearchParams(window.location.search);
-
-        if (!query) return;
-
-        params.set("q", query);
-
-        const baseUrl = window.location.origin + window.location.pathname;
-        window.location.href = `${baseUrl}?${params.toString()}`;
-    });
-});

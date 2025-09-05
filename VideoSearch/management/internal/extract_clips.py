@@ -8,7 +8,7 @@ import subprocess
 from tqdm import tqdm
 
 DEFAULT_CLIP_EXTRACTION_SETTINGS = {
-    "threshold_low": 0.35,
+    "threshold_low": 0.45,
     "threshold_high": 0.99,
     "order_low": 1,
     "max_pass_seconds": 1.5,

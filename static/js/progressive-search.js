@@ -6,15 +6,31 @@ document.addEventListener("DOMContentLoaded", function () {
     let resultsFound = false;
     let stop = false;
     let fetchInProgress = false;
-    let currentSearchMode = "balanced";
+    const urlParams = new URLSearchParams(window.location.search);
+    let currentSearchMode = urlParams.get("mode") || "balanced";
 
     const searchModeButtons = document.querySelectorAll(".search-mode-btn");
+    
+    // Set active button based on current mode
+    searchModeButtons.forEach(btn => {
+        if (btn.dataset.mode === currentSearchMode) {
+            btn.classList.add("active");
+        } else {
+            btn.classList.remove("active");
+        }
+    });
     
     searchModeButtons.forEach(btn => {
         btn.addEventListener("click", function() {
             searchModeButtons.forEach(b => b.classList.remove("active"));
             this.classList.add("active");
             currentSearchMode = this.dataset.mode;
+            
+            const params = new URLSearchParams(window.location.search);
+            params.set("mode", currentSearchMode);
+            const newUrl = `${window.location.pathname}?${params.toString()}`;
+            window.history.pushState({}, "", newUrl);
+            
             resetSearch();
         });
     });
@@ -71,8 +87,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 const div = document.createElement("div");
                 div.className = "clip-card preview-container-home";
+                const detailParams = new URLSearchParams();
+                detailParams.set("q", query);
+                detailParams.set("mode", currentSearchMode);
+                
                 div.innerHTML = `
-                    <a href="/detailed_view/${result.keyframe_id}?q=${encodeURIComponent(query)}" draggable="false">
+                    <a href="/detailed_view/${result.keyframe_id}?${detailParams.toString()}" draggable="false">
                         <img src="${result.thumbnail}" alt="Keyframe" data-keyframe-id="${result.keyframe_id}" class="thumbnail draggable-image" draggable="true" />
                     </a>
                 `;
@@ -95,5 +115,24 @@ document.addEventListener("DOMContentLoaded", function () {
     if (query) {
         loadMoreBtn.style.display = "none";
         fetchNextResult();
+    }
+    
+    // Form submission handler
+    const form = document.getElementById("search-form");
+    if (form) {
+        form.addEventListener("submit", (e) => {
+            e.preventDefault();
+
+            const query = form.q.value.trim();
+            const params = new URLSearchParams(window.location.search);
+
+            if (!query) return;
+
+            params.set("q", query);
+            params.set("mode", currentSearchMode);
+
+            const baseUrl = window.location.origin + window.location.pathname;
+            window.location.href = `${baseUrl}?${params.toString()}`;
+        });
     }
 });

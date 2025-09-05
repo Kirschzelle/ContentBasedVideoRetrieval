@@ -105,11 +105,6 @@ class Searcher:
                 distances.append(ocr_score)
                 weights.append(1.0)
         elif search_mode == "audio":
-            distances.append(clip_score)
-            weights.append(0.5)
-            if ocr_score is not None:
-                distances.append(ocr_score)
-                weights.append(0.1)
             if transcript_score is not None:
                 distances.append(transcript_score)
                 weights.append(5.0)
