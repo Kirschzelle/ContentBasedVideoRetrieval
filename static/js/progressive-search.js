@@ -24,10 +24,6 @@ document.addEventListener("DOMContentLoaded", function () {
         stop = false;
         fetchInProgress = false;
         
-        const params = new URLSearchParams();
-        params.append("reset", "1");
-        fetch(`/api/search/?${params.toString()}`);
-        
         if (query) {
             fetchNextResult();
         }
@@ -50,13 +46,17 @@ document.addEventListener("DOMContentLoaded", function () {
             const response = await fetch(`/api/search/?${params.toString()}`);
             const data = await response.json();
 
-            if (data.done || !data.results || data.results.length === 0) {
+            if (!data.results || data.results.length === 0) {
                 if (!resultsFound) {
                     resultContainer.innerHTML = `<p>No clips found matching "${query}" in ${currentSearchMode} mode.</p>`;
                 }
                 stop = true;
                 fetchInProgress = false;
                 return;
+            }
+            
+            if (data.done) {
+                stop = true;
             }
 
             resultsFound = true;

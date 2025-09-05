@@ -73,17 +73,18 @@ def api_search_view(request):
         search_mode=search_mode,
         session_state=session_state, 
         filters=filters,
-        batch_size=100
+        batch_size=20
     )
     
     serializable_state = {
         'returned_ids': list(search_result['session_state']['returned_ids']),
-        'positions': search_result['session_state']['positions'].copy()
+        'positions': search_result['session_state']['positions'].copy(),
+        'last_query': search_result['session_state']['last_query']
     }
     request.session['search_state'] = serializable_state
     
     if not search_result['results']:
-        return JsonResponse({"done": True})
+        return JsonResponse({"results": [], "done": True})
 
     media_root = Path(settings.MEDIA_ROOT).resolve()
     keyframe_data = []

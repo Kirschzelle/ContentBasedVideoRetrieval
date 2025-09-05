@@ -81,16 +81,17 @@ class Searcher:
         if filters is None:
             filters = {}
         
-        if session_state is None:
+        if session_state is None or session_state.get('last_query') != query:
             session_state = {
                 'buffers': {},
                 'positions': {},
-                'returned_ids': set()
+                'returned_ids': set(),
+                'last_query': query
             }
         
         active_indices = self._get_active_indices(search_mode, filters)
         
-        if not session_state['buffers']:
+        if not session_state.get('buffers'):
             session_state = self._initialize_search_buffers(query, active_indices, session_state)
         
         results = []
@@ -114,10 +115,7 @@ class Searcher:
         
         if search_mode in ["visual", "balanced"]:
             indices['clip'] = (self.clip_index, self.id_map)
-            indices['colors'] = (self.color_index, self.color_id_map)
-            indices['objects'] = (self.object_index, self.object_id_map)
             indices['ocr_text'] = None
-            indices['ocr_embedding'] = (self.ocr_index, self.ocr_id_map)
             
         if search_mode in ["audio", "balanced"]:
             indices['transcript_text'] = None
@@ -138,8 +136,15 @@ class Searcher:
         return indices
     
     def _initialize_search_buffers(self, query: str, active_indices: dict, session_state: dict) -> dict:
-        buffer_size = 500
+        buffer_size = 5000
         query_embedding = self.encode_text(query)
+        
+        if 'buffers' not in session_state:
+            session_state['buffers'] = {}
+        if 'positions' not in session_state:
+            session_state['positions'] = {}
+        if 'returned_ids' not in session_state:
+            session_state['returned_ids'] = set()
         
         for index_name, index_data in active_indices.items():
             if index_name == "transcript_text":
@@ -152,15 +157,15 @@ class Searcher:
                 ocr_keyframes = [self.kf_lookup[kf_id] for kf_id in ocr_results if kf_id in self.kf_lookup]
                 session_state['buffers'][index_name] = ocr_keyframes[:buffer_size]
                 session_state['positions'][index_name] = len(ocr_keyframes)
-            elif index_name in ["dino", "colors", "objects", "ocr_embedding"]:
-                session_state['buffers'][index_name] = []
-                session_state['positions'][index_name] = 0
-            else:
+            elif index_name == "clip":
                 index, id_map = index_data
                 annoy_ids = index.get_nns_by_vector(query_embedding, buffer_size)
                 keyframes = [self.kf_lookup[id_map[i]] for i in annoy_ids if id_map[i] in self.kf_lookup]
                 session_state['buffers'][index_name] = keyframes
                 session_state['positions'][index_name] = buffer_size
+            else:
+                session_state['buffers'][index_name] = []
+                session_state['positions'][index_name] = 0
         
         return session_state
     
