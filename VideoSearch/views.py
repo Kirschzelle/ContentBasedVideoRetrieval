@@ -8,7 +8,7 @@ import sys
 import os
 from django.utils.http import urlencode
 
-_searcher_instance = None  # Clear on server restart
+_searcher_instance = None  # Force clear searcher cache
 
 def get_searcher():
     global _searcher_instance
@@ -16,6 +16,12 @@ def get_searcher():
     if _searcher_instance is None:
         from utils.search import Searcher  # Lazy import
         _searcher_instance = Searcher()
+    
+    # Clear any cached query state for fresh results
+    _searcher_instance.last_query = None
+    _searcher_instance.last_embedding = None
+    _searcher_instance.last_query_objects = None
+    
     return _searcher_instance
 
 # Create your views here.

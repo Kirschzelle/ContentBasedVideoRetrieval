@@ -40,6 +40,7 @@ class Searcher:
         self.last_query = None
         self.last_embedding = None
         self.last_query_objects = None
+        self.last_search_mode = None
 
         self.kf_lookup = {
             kf.id: kf for kf in Keyframe.objects.select_related("clip", "clip__video")
@@ -57,7 +58,10 @@ class Searcher:
         if filters is None:
             filters = {}
 
-        query_embedding = self.encode_text(query)
+        # Reset debug counter for each search
+        self._debug_count = 0
+        
+        query_embedding = self.encode_text(query, search_mode)
 
         all_candidate_ids = set(self.kf_lookup.keys()) - returned_ids
 
@@ -84,6 +88,7 @@ class Searcher:
         object_score = self._compute_object_similarity(candidate_features)
         ocr_score = self._compute_ocr_similarity(query_embedding, candidate_features, query_text)
         transcript_score = self._compute_transcript_similarity(query_embedding, candidate_features, query_text)
+        
         
         filter_scores = self._compute_filter_distances(candidate_features, filters)
 
@@ -127,7 +132,7 @@ class Searcher:
         
         weighted_distances = [d * w for d, w in zip(distances, weights)]
         return nonlinear_pooling(weighted_distances, 1)
-
+    
     def _compute_clip_similarity(self, query_embedding, candidate_features):
         emb = candidate_features.get("clip_emb")
         if emb is None:
@@ -145,12 +150,13 @@ class Searcher:
         confs = self.last_query_objects.get("objects", {})
         avg_conf = np.mean(list(confs.values())) if confs else 0.0
         weight = 0.2 + 0.8 * avg_conf
-        return object_distance
+        return object_distance * weight
 
     def _compute_ocr_similarity(self, query_embedding, candidate_features, query_text=None):
-        ocr_text = candidate_features.get("ocr_text")
+        ocr_data = candidate_features.get("ocr", {})
+        ocr_text = ocr_data.get("text") if ocr_data else None
         ocr_emb = candidate_features.get("ocr_embedding")
-        ocr_confidence = candidate_features.get("ocr_confidence", 0.0)
+        ocr_confidence = ocr_data.get("confidence", 0.0) if ocr_data else 0.0
         
         if not ocr_text and ocr_emb is None:
             return None
@@ -195,9 +201,10 @@ class Searcher:
         return weighted_avg
 
     def _compute_transcript_similarity(self, query_embedding, candidate_features, query_text=None):
-        transcript_text = candidate_features.get("transcript_text")
+        transcript_data = candidate_features.get("transcript", {})
+        transcript_text = transcript_data.get("text") if transcript_data else None
         transcript_emb = candidate_features.get("transcript_embedding")
-        transcript_confidence = candidate_features.get("transcript_confidence", 0.0)
+        transcript_confidence = transcript_data.get("confidence", 0.0) if transcript_data else 0.0
         
         if not transcript_text and transcript_emb is None:
             return None
@@ -261,8 +268,8 @@ class Searcher:
         return distances
 
 
-    def encode_text(self, text: str) -> np.ndarray:
-        if text == self.last_query and self.last_embedding is not None:
+    def encode_text(self, text: str, search_mode: str = "balanced") -> np.ndarray:
+        if text == self.last_query and search_mode == self.last_search_mode and self.last_embedding is not None:
             return self.last_embedding
 
         try:
@@ -300,7 +307,9 @@ class Searcher:
                 raise
 
         self.last_query = text
+        self.last_search_mode = search_mode
         self.last_embedding = features
+        
 
         query_objects = {
             "objects": ufil.find_fuzzy_object_matches(text, threshold=0.5, max_matches=5)

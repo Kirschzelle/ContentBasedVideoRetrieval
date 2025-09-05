@@ -35,6 +35,30 @@ document.addEventListener("DOMContentLoaded", function () {
     let resultsFound = false;
     let stop = false;
     let fetchInProgress = false;
+    let currentSearchMode = "balanced";
+
+    const searchModeButtons = document.querySelectorAll(".search-mode-btn");
+    
+    searchModeButtons.forEach(btn => {
+        btn.addEventListener("click", function() {
+            searchModeButtons.forEach(b => b.classList.remove("active"));
+            this.classList.add("active");
+            currentSearchMode = this.dataset.mode;
+            resetSearch();
+        });
+    });
+
+    function resetSearch() {
+        resultContainer.innerHTML = "";
+        returnedKeyframes.clear();
+        resultsFound = false;
+        stop = false;
+        fetchInProgress = false;
+        
+        if (query) {
+            fetchNextResult();
+        }
+    }
 
     const filterKeys = entries
         .filter(([key, _]) => key.startsWith("filters["))
@@ -50,6 +74,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const requestParams = new URLSearchParams();
         requestParams.append("q", query);
+        requestParams.append("mode", currentSearchMode);
 
         [...returnedKeyframes].forEach(id =>
             requestParams.append("returned[]", id)
