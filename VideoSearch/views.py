@@ -8,7 +8,7 @@ import sys
 import os
 from django.utils.http import urlencode
 
-_searcher_instance = None
+_searcher_instance = None  # Clear on server restart
 
 def get_searcher():
     global _searcher_instance
