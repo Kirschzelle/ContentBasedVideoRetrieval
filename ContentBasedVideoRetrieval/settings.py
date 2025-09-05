@@ -126,6 +126,9 @@ MEDIA_URL = 'media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'data')
 STATICFILES_DIRS = [os.path.join(BASE_DIR, STATIC_URL)]
 
+# Increase Django parameter limits for search functionality
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
