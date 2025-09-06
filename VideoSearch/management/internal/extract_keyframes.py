@@ -115,41 +115,40 @@ def process_clip_entry(entry, feature_extractor, threshold, search_range_factor,
     else:
         print(f"[KeyframeExtraction] {regions_msg}.")
 
+    # Process all change regions with recursive keyframe extraction
+    total_regions_processed = 0
+    total_keyframes_added = 0
+    
     for i, (start, end) in enumerate(change_regions, 1):
-        potential_keyframe = int((start + end) / 2)
-        
-        # Calculate adaptive frames_to_compare based on region length
+        # Show initial region processing
         region_length_frames = end - start + 1
-        region_duration_seconds = region_length_frames / clip.fps()
-        adaptive_frames_to_compare = calculate_frames_to_compare(region_duration_seconds)
-        
-        # Show progress through regions
         if pbar:
-            pbar.set_postfix_str(f"Clip {clip.id} ({clip_length} frames): Processing region {i}/{len(change_regions)} ({region_length_frames}f, {adaptive_frames_to_compare}smp)")
+            pbar.set_postfix_str(f"Clip {clip.id} ({clip_length} frames): Starting region {i}/{len(change_regions)} ({region_length_frames}f)")
             pbar.refresh()
         
         keyframes_before = Keyframe.objects.filter(clip=clip).count()
         
-        try_for_potential_keyframe(
+        # Use recursive extraction for this region
+        regions_processed, keyframes_added = extract_keyframes_recursively(
             feature_extractor,
             clip,
-            potential_keyframe,
             start,
             end,
-            int((end - start) * search_range_factor),
+            search_range_factor,
             threshold,
-            adaptive_frames_to_compare
+            pbar=pbar,
+            clip_info=(clip.id, clip_length)
         )
         
-        keyframes_after = Keyframe.objects.filter(clip=clip).count()
-        keyframes_added = keyframes_after - keyframes_before
+        total_regions_processed += regions_processed
+        total_keyframes_added += keyframes_added
         
-        # Show keyframes added for this region
+        # Show results for this change region
         if pbar:
-            pbar.set_postfix_str(f"Clip {clip.id} ({clip_length} frames): Region {i}/{len(change_regions)} → +{keyframes_added} keyframes")
+            pbar.set_postfix_str(f"Clip {clip.id}: Region {i}/{len(change_regions)} → +{keyframes_added} keyframes ({regions_processed} sub-regions)")
             pbar.refresh()
         elif not command:
-            print(f"[KeyframeExtraction] Region {i}/{len(change_regions)} → Added {keyframes_added} keyframes")
+            print(f"[KeyframeExtraction] Region {i}/{len(change_regions)} → Added {keyframes_added} keyframes from {regions_processed} sub-regions")
 
     keyframe_count = Keyframe.objects.filter(clip=clip).count()
     clip_length = clip.end_frame - clip.start_frame + 1
@@ -157,13 +156,13 @@ def process_clip_entry(entry, feature_extractor, threshold, search_range_factor,
     
     # Always show completion with tqdm.write when using progress bar
     if pbar:
-        tqdm.write(f"[OK] Clip {clip.id} ({clip_length} frames): Extracted {keyframe_count} keyframes from {len(change_regions)} regions")
-        pbar.set_postfix_str(f"Completed clip {clip.id}")
+        tqdm.write(f"[OK] Clip {clip.id} ({clip_length} frames): Extracted {keyframe_count} keyframes from {len(change_regions)} change regions ({total_regions_processed} total regions processed)")
+        pbar.set_postfix_str(f"Completed clip {clip.id}: {keyframe_count} keyframes")
         pbar.refresh()
     elif command:
-        command.stdout.write(command.style_success(result_msg))
+        command.stdout.write(command.style_success(f"{result_msg} (processed {total_regions_processed} regions recursively)"))
     else:
-        print(f"[KeyframeExtraction] {result_msg}")
+        print(f"[KeyframeExtraction] {result_msg} (processed {total_regions_processed} regions recursively)")
 
     # GPU memory cleanup
     try:
@@ -264,6 +263,116 @@ def compute_sampling_bounds(clip, center_frame, lower_bound, upper_bound, search
         return center_frame, center_frame+1
     else:
         return start, end
+
+
+def extract_keyframes_recursively(
+    feature_extractor,
+    clip,
+    start_frame: int,
+    end_frame: int,
+    search_range_factor: float,
+    threshold: float,
+    max_depth: int = 10,
+    pbar=None,
+    clip_info=None,
+    depth: int = 0
+):
+    """
+    Recursively extract keyframes from a region.
+    After adding keyframes, subdivides the region and checks for more keyframes
+    between the newly added ones until no more can be found.
+    
+    Returns: (total_regions_processed, total_keyframes_added)
+    """
+    regions_processed = 0
+    keyframes_added = 0
+    
+    # Prevent infinite recursion
+    if depth >= max_depth:
+        return regions_processed, keyframes_added
+    
+    # Skip tiny regions  
+    if end_frame - start_frame < 5:
+        return regions_processed, keyframes_added
+    
+    regions_processed += 1
+    
+    # Try to extract keyframes from this region
+    keyframes_before = Keyframe.objects.filter(clip=clip).count()
+    
+    potential_keyframe = int((start_frame + end_frame) / 2)
+    region_length_frames = end_frame - start_frame + 1
+    region_duration_seconds = region_length_frames / clip.fps()
+    adaptive_frames_to_compare = calculate_frames_to_compare(region_duration_seconds)
+    
+    try_for_potential_keyframe(
+        feature_extractor,
+        clip,
+        potential_keyframe,
+        start_frame,
+        end_frame,
+        int((end_frame - start_frame) * search_range_factor),
+        threshold,
+        adaptive_frames_to_compare
+    )
+    
+    keyframes_after = Keyframe.objects.filter(clip=clip).count()
+    new_keyframes_count = keyframes_after - keyframes_before
+    keyframes_added += new_keyframes_count
+    
+    # If keyframes were added, get their positions and recursively process sub-regions
+    if new_keyframes_count > 0:
+        # Get all keyframes in this region (including newly added ones)
+        from VideoSearch.models import Keyframe
+        keyframes_in_region = Keyframe.objects.filter(
+            clip=clip,
+            frame__gte=start_frame,
+            frame__lte=end_frame
+        ).order_by('frame').values_list('frame', flat=True)
+        
+        keyframes_in_region = list(keyframes_in_region)
+        
+        # Create sub-regions between keyframes for recursive processing
+        boundaries = [start_frame] + keyframes_in_region + [end_frame]
+        boundaries = sorted(set(boundaries))  # Remove duplicates and sort
+        
+        # Process gaps between keyframes recursively
+        for i in range(len(boundaries) - 1):
+            sub_start = boundaries[i]
+            sub_end = boundaries[i + 1]
+            
+            # Skip if this is a keyframe position (no gap to process)
+            if sub_end - sub_start <= 1:
+                continue
+                
+            # Skip if we're too close to a keyframe (within minimum distance)
+            if any(abs(kf - (sub_start + sub_end) // 2) < 3 for kf in keyframes_in_region):
+                continue
+            
+            # Recursively process this sub-region
+            sub_regions, sub_keyframes = extract_keyframes_recursively(
+                feature_extractor,
+                clip,
+                sub_start,
+                sub_end,
+                search_range_factor,
+                threshold,
+                max_depth,
+                pbar,
+                clip_info,
+                depth + 1
+            )
+            
+            regions_processed += sub_regions
+            keyframes_added += sub_keyframes
+    
+    # Update progress for deep recursion levels
+    if pbar and clip_info and depth <= 2:  # Only show progress for top-level recursions
+        clip_id, clip_length = clip_info
+        pbar.set_postfix_str(f"Clip {clip_id}: Depth {depth}, Region {start_frame}-{end_frame} → +{new_keyframes_count} keyframes")
+        pbar.refresh()
+    
+    return regions_processed, keyframes_added
 
 
 def refine_and_store_keyframes(candidates, clip, feature_extractor, threshold):

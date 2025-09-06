@@ -190,48 +190,87 @@ class ClipProcessor:
             if self.command:
                 self.command.stdout.write(f"Feature extraction failed for keyframe {keyframe.id}: {e}")
     
-    def _fill_visual_gaps(self, clip: Clip, existing_keyframes: List[Keyframe], gap_threshold_seconds: float = 2.0):
+    def _fill_visual_gaps(self, clip: Clip, existing_keyframes: List[Keyframe]):
         if len(existing_keyframes) < 2:
             return
         
-        keyframes_by_frame = sorted(existing_keyframes, key=lambda kf: kf.frame)
-        fps = clip.video.fps()
-        gap_threshold_frames = gap_threshold_seconds * fps
+        # Get all existing keyframes including newly added ones
+        all_keyframes = Keyframe.objects.filter(clip=clip).order_by('frame')
+        keyframes_by_frame = list(all_keyframes)
         
-        gaps_to_fill = []
+        if len(keyframes_by_frame) < 2:
+            return
+        
+        # Process gaps between adjacent keyframes recursively
+        gaps_processed = 0
         for i in range(len(keyframes_by_frame) - 1):
             current = keyframes_by_frame[i]
             next_kf = keyframes_by_frame[i + 1]
-            gap_frames = next_kf.frame - current.frame
             
-            if gap_frames > gap_threshold_frames or self._visual_dissimilarity_high(current, next_kf):
-                midpoint_frame = (current.frame + next_kf.frame) // 2
-                gaps_to_fill.append(midpoint_frame)
+            gaps_in_region = self._fill_visual_gaps_recursively(
+                clip, 
+                current.frame, 
+                next_kf.frame
+            )
+            gaps_processed += gaps_in_region
         
-        for frame in gaps_to_fill:
-            if Keyframe.objects.filter(clip=clip, frame=frame).exists():
-                if self.command:
-                    self.command.stdout.write(f"Skipping gap keyframe at frame {frame} - already exists")
-                continue
+        if self.command and gaps_processed > 0:
+            self.command.stdout.write(f"Recursively filled {gaps_processed} visual gaps in clip {clip.id}")
+    
+    def _fill_visual_gaps_recursively(self, clip: Clip, start_frame: int, end_frame: int, depth: int = 0) -> int:
+        """
+        Recursively fill visual gaps between keyframes based purely on visual dissimilarity.
+        Returns the number of gaps filled.
+        """
+        gaps_filled = 0
+        
+        gap_frames = end_frame - start_frame
+        if gap_frames <= 6:
+            return gaps_filled
+        
+        start_kf = Keyframe.objects.filter(clip=clip, frame=start_frame).first()
+        end_kf = Keyframe.objects.filter(clip=clip, frame=end_frame).first()
+        
+        if start_kf and end_kf and self._visual_dissimilarity_high(start_kf, end_kf):
+            midpoint_frame = (start_frame + end_frame) // 2
+            
+            if (midpoint_frame - start_frame < 3) or (end_frame - midpoint_frame < 3):
+                return gaps_filled
                 
+            if Keyframe.objects.filter(clip=clip, frame=midpoint_frame).exists():
+                return gaps_filled
+            
             try:
                 gap_keyframe = Keyframe.objects.create(
                     clip=clip,
-                    frame=frame,
+                    frame=midpoint_frame,
                     embedding_clip=b'',
                     transcript_text="",
                     transcript_confidence=0.0,
                     transcript_context="",
                     transcript_embedding=None
                 )
+                
                 self._extract_all_features(gap_keyframe)
                 
-                if self.command:
-                    self.command.stdout.write(f"Added gap-filling keyframe at frame {frame}")
+                if Keyframe.objects.filter(clip=clip, frame=midpoint_frame).exists():
+                    gaps_filled += 1
                     
+                    if self.command:
+                        self.command.stdout.write(f"Added recursive gap keyframe at frame {midpoint_frame} (depth {depth})")
+                    
+                    gaps_filled += self._fill_visual_gaps_recursively(
+                        clip, start_frame, midpoint_frame, depth + 1
+                    )
+                    gaps_filled += self._fill_visual_gaps_recursively(
+                        clip, midpoint_frame, end_frame, depth + 1
+                    )
+                
             except Exception as e:
                 if self.command:
-                    self.command.stdout.write(f"Failed to create gap keyframe at frame {frame}: {e}")
+                    self.command.stdout.write(f"Failed to create recursive gap keyframe at frame {midpoint_frame}: {e}")
+        
+        return gaps_filled
     
     def _visual_dissimilarity_high(self, keyframe1: Keyframe, keyframe2: Keyframe, threshold: float = 0.9) -> bool:
         try:
