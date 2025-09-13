@@ -342,13 +342,27 @@ class Keyframe(models.Model):
 
     @staticmethod
     def decompress_array(blob: bytes, dtype=np.float32) -> np.ndarray:
-        return np.frombuffer(zlib.decompress(blob), dtype=dtype).copy()
+        try:
+            return np.frombuffer(zlib.decompress(blob), dtype=dtype).copy()
+        except (zlib.error, Exception) as e:
+            print(f"ERROR: Failed to decompress embedding data: {e}")
+            return None
     
     def load_embedding_clip(self):
-        return self.decompress_array(self.embedding_clip)
+        if not self.embedding_clip:
+            return None
+        result = self.decompress_array(self.embedding_clip)
+        if result is None:
+            print(f"ERROR: Corrupted CLIP embedding for keyframe {self.id}")
+        return result
 
     def load_embedding_dino(self):
-        return self.decompress_array(self.embedding_dino) if self.embedding_dino else None
+        if not self.embedding_dino:
+            return None
+        result = self.decompress_array(self.embedding_dino)
+        if result is None:
+            print(f"ERROR: Corrupted DINO embedding for keyframe {self.id}")
+        return result
 
     def load_histogram_hsv(self):
         return self.decompress_array(self.histogram_hsv) if self.histogram_hsv else None

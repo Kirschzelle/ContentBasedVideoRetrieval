@@ -21,6 +21,7 @@ def get_searcher():
     _searcher_instance.last_query = None
     _searcher_instance.last_embedding = None
     _searcher_instance.last_query_objects = None
+    _searcher_instance.last_search_mode = None
     
     return _searcher_instance
 
